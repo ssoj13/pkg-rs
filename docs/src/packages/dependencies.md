@@ -60,12 +60,9 @@ The solver finds a `cuda` version satisfying both.
 ## CLI
 
 ```powershell
-# Resolve and show
-pkg solve maya houdini
-
-# Dry run
-pkg solve maya -n
+# Preview resolved environment
+pkg env maya houdini -n
 
 # JSON output
-pkg solve maya --json
+pkg env maya --json -n
 ```

@@ -54,5 +54,5 @@ JSON output (where supported).
 ```powershell
 pkg list --json
 pkg info maya --json
-pkg solve maya --json
+pkg env maya --json -n
 ```

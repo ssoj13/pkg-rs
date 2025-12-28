@@ -350,6 +350,16 @@ impl Env {
     }
 }
 
+// Rust-only methods (not exposed to Python)
+impl Env {
+    /// Returns evars sorted by name (for display).
+    pub fn evars_sorted(&self) -> Vec<&Evar> {
+        let mut sorted: Vec<_> = self.evars.iter().collect();
+        sorted.sort_by(|a, b| a.name.cmp(&b.name));
+        sorted
+    }
+}
+
 /// Iterator for Env (Python support)
 #[pyclass]
 struct EnvIter {

@@ -56,7 +56,7 @@ When multiple versions match, the solver prefers:
 
 ```powershell
 # Resolve with constraints
-pkg solve "maya@>=2024" "redshift@3"
+pkg env "maya@>=2024" "redshift@3" -n
 
 # Check what version resolves
 pkg info maya@2024

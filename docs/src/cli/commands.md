@@ -22,17 +22,6 @@ pkg info maya-2024.0.0    # Specific version
 pkg info maya --json      # JSON output
 ```
 
-## solve
-
-Resolve dependencies using SAT solver.
-
-```powershell
-pkg solve maya                # Single package
-pkg solve maya houdini        # Multiple packages
-pkg solve maya -n             # Dry run (preview)
-pkg solve maya --json         # JSON output
-```
-
 ## env
 
 Print environment variables for package(s).
@@ -54,17 +43,6 @@ pkg env maya bifrost arnold  # Multiple packages (toolset)
 - `-n, --dry-run` - Preview what would be set
 
 **PATH Order:** Direct requirements appear first (in request order), then transitive dependencies.
-
-## run
-
-Launch application from package.
-
-```powershell
-pkg run maya                      # Default app
-pkg run maya mayapy               # Specific app
-pkg run maya -n                   # Dry run
-pkg run maya -- -batch -file x.ma # With arguments
-```
 
 ## graph
 

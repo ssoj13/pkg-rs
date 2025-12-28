@@ -1,42 +1,44 @@
 # pkg-rs
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-nightly-orange.svg)](https://www.rust-lang.org/)
 
-Package manager for VFX/DCC applications: Maya, Houdini, Nuke, and everything else in your pipeline.
+![pkg-rs](docs/test.png)
 
-Start here: see [USERGUIDE.md](USERGUIDE.md) for step-by-step workflows.
+Package manager for VFX/DCC applications. Manages environment configuration for Maya, Houdini, Nuke, and other pipeline software.
 
-## Why?
+See [USERGUIDE.md](USERGUIDE.md) for detailed workflows.
 
-You have Maya 2024, Maya 2025, three versions of Houdini, Redshift that works only with certain versions, and a dozen studio tools. Each needs specific environment variables, paths, and dependencies. This tool:
+## Overview
 
-1. **Knows what works together** - request "maya + redshift + studio_tools" and it finds compatible versions automatically. If there's a conflict, it explains why in plain English
-2. **Sets up the environment** - PATH, PYTHONPATH, license servers, plugin paths - all configured and ready
-3. **Launches apps correctly** - `pkg run maya` and you're in, with everything loaded
+Manages multiple versions of DCC applications and plugins with automatic dependency resolution:
+
+- **Dependency resolution** — request `maya + redshift + studio_tools`, solver finds compatible versions. Conflicts reported with clear diagnostics
+- **Environment configuration** — PATH, PYTHONPATH, license servers, plugin paths configured automatically
+- **Application launch** — `pkg env maya -- maya.exe` starts application with correct environment
 
 ## Features
 
-- **Embedded Python** - package definitions are Python files, but you don't need Python installed. Interpreter is built-in
-- **Smart dependency solver** - finds compatible versions automatically. Conflicts? You'll know exactly which packages disagree and why
-- **Environment management** - variables, paths, tokens like `{MAYA_ROOT}/bin` that expand correctly
-- **Fast** - parallel scanning, JSON cache, rescans in milliseconds
-- **CLI + Python API** - use from terminal or embed in your pipeline scripts
-- **Cross-platform** - Windows and Linux
+- **Embedded Python** — package definitions are Python files; no Python installation required
+- **SAT-based solver** — finds compatible versions automatically with clear conflict diagnostics
+- **Token expansion** — variables like `{MAYA_ROOT}/bin` expand correctly
+- **Fast** — parallel scanning, JSON cache, millisecond rescan times
+- **CLI + Python API** — terminal usage or pipeline integration
+- **Cross-platform** — Windows and Linux
 
-## Why not rez?
+## Comparison with rez
 
-[rez](https://github.com/AcademySoftwareFoundation/rez) is the industry standard and it's great. But:
+[rez](https://github.com/AcademySoftwareFoundation/rez) is the industry standard. Key differences:
 
 | | pkg-rs | rez |
 |---|--------|-----|
-| Install | single binary, no dependencies | Python + pip + system packages |
-| Speed | 30ms warm scan, 90μs solve | seconds |
-| Python for packages | embedded, always works | system Python, version conflicts possible |
-| Conflict messages | "maya-2024 needs redshift>=3.5, but you requested redshift-3.0" | sometimes cryptic |
-| Windows | native | works but painful |
+| Install | single binary | Python + pip + system packages |
+| Scan 200 packages | 30ms warm | seconds |
+| Solve time | ~90μs | milliseconds |
+| Python for packages | embedded | system Python required |
+| Windows | native | functional but complex setup |
 
-pkg-rs is not a rez replacement for large studios with existing infrastructure. It's for smaller teams, freelancers, or anyone who wants something that just works out of the box.
+pkg-rs targets smaller teams and simpler deployments. For large studios with existing rez infrastructure, migration may not be warranted.
 
 ## Installation
 
@@ -44,7 +46,7 @@ pkg-rs is not a rez replacement for large studios with existing infrastructure. 
 cargo install pkg-rs
 ```
 
-That's it. Single binary, no dependencies (no Python required).
+Single binary, no dependencies.
 
 ### From source
 
@@ -52,7 +54,7 @@ That's it. Single binary, no dependencies (no Python required).
 # Build CLI
 .\bootstrap.ps1 build
 
-# Build Python module (for embedding in pipeline scripts)
+# Build Python module
 .\bootstrap.ps1 python -i
 ```
 
@@ -61,35 +63,33 @@ That's it. Single binary, no dependencies (no Python required).
 ### CLI
 
 ```powershell
-# List all packages
+# List packages
 pkg list
+pkg list -L              # latest versions only
 
-# List only latest versions
-pkg list -L
-
-# Show package details
+# Package information
 pkg info maya
 
-# Resolve dependencies
-pkg solve maya houdini
+# Print environment
+pkg env maya
+pkg env maya -s          # with PKG_* stamp variables
 
-# Print environment (with token expansion)
-pkg env maya -s
+# Launch application with environment
+pkg env maya -- maya.exe
+pkg env maya -- maya.exe -batch -file scene.ma
 
-# Launch application
-pkg run maya
+# Export environment to script
+pkg env maya -o env.ps1
 
 # Interactive shell
 pkg shell
 
-# Python REPL with pkg module exposed
+# Python REPL
 pkg py
-
-# Python interpreter can also execute files
-pkg py package.py
+pkg py script.py
 ```
 
-### Python
+### Python API
 
 ```python
 from pkg import Package, Env, Evar, App, Storage, Solver
@@ -98,10 +98,10 @@ from pkg import Package, Env, Evar, App, Storage, Solver
 storage = Storage.scan()
 print(f"Found {len(storage.packages)} packages")
 
-# Resolve dependencies - returns list of package names
+# Resolve dependencies
 solver = Solver(storage.packages)
 solution = solver.solve("maya-2026.1.0")
-# solution = ["maya-2026.1.0", "redshift-3.5.0", "ocio-2.1.0", ...]
+# Returns: ["maya-2026.1.0", "redshift-3.5.0", "ocio-2.1.0", ...]
 
 # Create package programmatically
 p = Package("mytool", "1.0.0")
@@ -116,24 +116,6 @@ app = App("mytool")
 app.path = "/opt/mytool/bin/mytool"
 p.add_app(app)
 ```
-
-### package.py Import Styles
-
-In `package.py` files, classes are available in three ways:
-
-```python
-# 1. Direct access (classes injected into globals)
-Package("tool", "1.0.0")  # Just works
-
-# 2. Namespace style
-import pkg
-pkg.Package("tool", "1.0.0")
-
-# 3. Explicit import
-from pkg import Package, Env, Evar, App, Action
-```
-
-All three styles work - use whichever you prefer.
 
 ## Package Structure
 
@@ -162,9 +144,11 @@ import sys
 def get_package():
     pkg = Package("houdini", "21.0.440")
     
-    # Platform paths
-    root = Path("C:/Program Files/Side Effects Software/Houdini 21.0.440") \
-           if sys.platform == "win32" else Path("/opt/hfs21.0.440")
+    # Platform-specific paths
+    if sys.platform == "win32":
+        root = Path("C:/Program Files/Side Effects Software/Houdini 21.0.440")
+    else:
+        root = Path("/opt/hfs21.0.440")
     
     # Environment
     env = Env("default")
@@ -185,57 +169,65 @@ def get_package():
     return pkg
 ```
 
+### Import Styles
+
+Classes available in package.py via three methods:
+
+```python
+# Direct (injected into globals)
+Package("tool", "1.0.0")
+
+# Namespace
+import pkg
+pkg.Package("tool", "1.0.0")
+
+# Explicit import
+from pkg import Package, Env, Evar, App
+```
+
 ## CLI Reference
 
 ```
 pkg [OPTIONS] <COMMAND>
 
 Commands:
-  list        List available packages
+  list        List available packages (alias: ls)
   info        Show package details
-  solve       Resolve dependencies
-  env         Print environment variables
-  run         Launch application
-  graph       Show dependency graph (DOT/Mermaid)
-  scan        Scan locations for packages
-  shell       Interactive mode (tab completion)
-  py          Python REPL with pkg
+  env         Setup environment and run command
+  graph       Dependency graph (DOT/Mermaid)
+  scan        Scan package locations
+  shell       Interactive mode (alias: sh)
+  py          Python REPL
   gen-repo    Generate test repository
-  completions Generate shell completions
+  gen-pkg     Generate package.py template
+  completions Shell completions
 
 Options:
-  -r, --repo <PATH>   Add package repository
-  -v                  Verbose (-vv debug, -vvv trace)
+  -r, --repo <PATH>   Package repository path
+  -v                  Verbosity (-vv debug, -vvv trace)
   -x, --exclude       Exclude packages by pattern
-  --json              JSON output (where supported)
+  --json              JSON output
 ```
 
 ### Examples
 
 ```powershell
-# List packages filtered by name
+# Filter by name
 pkg list -n maya
 
-# Show specific version
+# Specific version info
 pkg info maya-2024.0.0
 
-# Dry-run solve (preview)
-pkg solve maya houdini -n
+# Dry-run (preview environment)
+pkg env maya -n
 
-# Export environment to file
-pkg env maya -o env.ps1
-
-# Run with extra arguments
-pkg run maya -- -batch -file scene.ma
-
-# Dependency graph (Graphviz DOT)
+# Dependency graph
 pkg graph maya > deps.dot
 dot -Tpng deps.dot -o deps.png
 
-# Dependency graph (Mermaid)
 pkg graph maya -f mermaid
 
-# Generate shell completions
+# Shell completions
 pkg completions powershell >> $PROFILE
 pkg completions bash >> ~/.bashrc
 ```
@@ -252,17 +244,14 @@ pkg completions bash >> ~/.bashrc
 
 ### Token Expansion
 
-Reference other variables with `{VARNAME}`:
+Reference variables with `{VARNAME}`:
 
 ```python
 env.add(Evar("MAYA_ROOT", "C:/Maya", "set"))
-env.add(Evar("PATH", "{MAYA_ROOT}/bin", "append"))  # -> C:/Maya/bin
-env.add(Evar("PYTHONPATH", "{MAYA_ROOT}/scripts", "append"))
+env.add(Evar("PATH", "{MAYA_ROOT}/bin", "append"))  # expands to C:/Maya/bin
 ```
 
 ## Version Constraints
-
-Use `@` syntax for version requirements:
 
 | Constraint | Matches |
 |------------|---------|
@@ -276,8 +265,6 @@ Use `@` syntax for version requirements:
 
 ### Package Locations
 
-Set `PKG_LOCATIONS` to point to your package repositories:
-
 ```powershell
 # Windows
 $env:PKG_LOCATIONS = "C:\packages;D:\studio\packages"
@@ -286,19 +273,19 @@ $env:PKG_LOCATIONS = "C:\packages;D:\studio\packages"
 export PKG_LOCATIONS="/opt/packages:/studio/packages"
 ```
 
-If `PKG_LOCATIONS` is not set, pkg looks for a `repo/` folder in the current directory.
+Default: `repo/` in current directory.
 
 ## Performance
 
-Benchmarks on typical VFX repository (200 packages):
+Benchmarks on 200-package repository:
 
 | Operation | Cold | Warm (cached) |
 |-----------|------|---------------|
-| Scan 200 packages | 102ms | 31ms |
-| Solve 25 requirements | 91us | - |
-| Solve chain depth 20 | 23us | - |
+| Scan | 102ms | 31ms |
+| Solve 25 requirements | 91μs | - |
+| Solve chain depth 20 | 23μs | - |
 
-Cache uses mtime-based invalidation - modified packages are automatically reloaded.
+Cache invalidation based on file mtime.
 
 ## API Reference
 
@@ -306,25 +293,22 @@ Cache uses mtime-based invalidation - modified packages are automatically reload
 
 ```python
 pkg = Package("name", "1.0.0")
-pkg.name          # "name-1.0.0" (full name)
+pkg.name          # "name-1.0.0"
 pkg.base          # "name"
 pkg.version       # "1.0.0"
-pkg.reqs          # requirements (constraints)
-pkg.deps          # resolved dependencies
 
 pkg.add_req("other@>=1.0")
 pkg.add_env(env)
 pkg.add_app(app)
-pkg.solve(storage.packages)
 ```
 
 ### Storage
 
 ```python
-storage = Storage.scan()              # Default locations
-storage = Storage.scan_paths([...])   # Custom paths
+storage = Storage.scan()
+storage = Storage.scan_paths([...])
 
-storage.packages       # All packages
+storage.packages
 storage.get("name-1.0.0")
 storage.latest("name")
 storage.versions("name")
@@ -337,16 +321,15 @@ storage.resolve("name@>=1.0")
 solver = Solver(storage.packages)
 solution = solver.solve("maya-2026.1.0")
 solution = solver.solve_reqs(["maya", "houdini"])
-# Returns: ["maya-2026.1.0", "houdini-21.0.0", "redshift-3.5.0", ...]
 ```
 
 ### Env / Evar
 
 ```python
 env = Env("default")
-env.add(Evar("NAME", "value", "set"))   # set/append/insert
-env.solve()     # Expand tokens
-env.commit()    # Apply to current process
+env.add(Evar("NAME", "value", "set"))
+env.solve()     # expand tokens
+env.commit()    # apply to process
 ```
 
 ### App
@@ -359,38 +342,25 @@ app.args = ["-batch"]
 app.cwd = "/project"
 ```
 
-## Try It Out
+## Test Repository
 
-Don't want to spend a week setting up test packages? There's a built-in repository generator:
+Generate test packages for experimentation:
 
 ```powershell
-# Generate 200 packages with realistic dependencies
 pkg gen-repo -n 200 -V 5 --dep-rate 0.4 -o ./test-repo
-
-# Point to it
 $env:PKG_LOCATIONS = "./test-repo"
 
-# Play around
 pkg list
-pkg solve maya houdini redshift
-pkg env maya -s
+pkg env maya redshift -s
 ```
 
-Or use the ready-made test scripts in `tests/`:
+Test scripts in `tests/`:
 
 ```powershell
-# Windows
-./tests/test.ps1 gen       # generate test repos
-./tests/test.ps1 basic     # list, info, env, solve
+./tests/test.ps1 gen       # generate repositories
+./tests/test.ps1 basic     # list, info, env
 ./tests/test.ps1 conflict  # dependency conflict scenarios
-
-# Linux/macOS
-./tests/test.sh gen
-./tests/test.sh basic
-./tests/test.sh conflict
 ```
-
-The generator creates packages with names like `maya`, `houdini`, `redshift`, `arnold`, `usd` — familiar VFX software with plausible version numbers and dependency chains.
 
 ## License
 

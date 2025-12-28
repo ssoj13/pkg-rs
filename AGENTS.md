@@ -575,9 +575,7 @@ pkg_lib (lib.rs)
 |---------|---------|-------------|
 | `pkg list` | `commands/list.rs` | List packages |
 | `pkg info <pkg>` | `commands/info.rs` | Package details |
-| `pkg run <pkg>` | `commands/run.rs` | Launch app |
-| `pkg env <pkg>` | `commands/env.rs` | Print environment |
-| `pkg solve <pkg>` | `commands/solve.rs` | Resolve deps |
+| `pkg env <pkg>` | `commands/env.rs` | Environment and launch |
 | `pkg graph <pkg>` | `commands/graph.rs` | Dep graph |
 | `pkg scan` | `commands/scan.rs` | Scan locations |
 | `pkg shell` | `shell.rs` | Interactive mode |

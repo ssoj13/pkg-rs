@@ -52,17 +52,14 @@ app = App("houdini") \
 ## Running Apps
 
 ```powershell
-# Default app (first defined)
-pkg run maya
-
-# Specific app
-pkg run maya mayapy
+# Launch with environment
+pkg env maya -- maya.exe
 
 # With extra arguments
-pkg run maya -- -batch -file scene.ma
+pkg env maya -- maya.exe -batch -file scene.ma
 
-# Dry run (show what would run)
-pkg run maya -n
+# Dry run (show what would happen)
+pkg env maya -n
 ```
 
 ## Properties

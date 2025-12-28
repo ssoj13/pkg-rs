@@ -12,14 +12,11 @@ pkg list -L
 # Show package info
 pkg info maya
 
-# Resolve dependencies
-pkg solve maya houdini
-
 # Print environment
 pkg env maya -s
 
-# Run application
-pkg run maya
+# Launch application
+pkg env maya -- maya.exe
 ```
 
 ## Creating Your First Package
@@ -60,7 +57,7 @@ def get_package():
 ```powershell
 pkg -r ./mypackages list
 pkg -r ./mypackages info mytool
-pkg -r ./mypackages run mytool
+pkg -r ./mypackages env mytool -- mytool.exe
 ```
 
 ## Python Usage

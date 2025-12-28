@@ -65,7 +65,7 @@ env.solve()    # Expand tokens
 env.commit()   # Apply to os.environ
 
 # From CLI
-pkg env maya           # Print expanded (default)
-pkg env maya -s        # With PKG_* stamp variables
-pkg run maya           # Apply and launch
+pkg env maya               # Print expanded (default)
+pkg env maya -s            # With PKG_* stamp variables
+pkg env maya -- maya.exe   # Apply and launch
 ```

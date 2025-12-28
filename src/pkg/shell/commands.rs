@@ -217,7 +217,7 @@ pub fn shell_env(storage: &Storage, args: &[&str]) {
     match pkg.effective_env(app_name) {
         Ok(Some(env)) => {
             println!("Environment for {}:", pkg.name);
-            for evar in &env.evars {
+            for evar in env.evars_sorted() {
                 println!("  {}={}", evar.name, evar.value);
             }
         }
