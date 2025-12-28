@@ -44,7 +44,7 @@ pkg-rs is not a rez replacement for large studios with existing infrastructure. 
 cargo install pkg-rs
 ```
 
-That's it. Single binary, no Python required, no dependencies.
+That's it. Single binary, no dependencies (no Python required).
 
 ### From source
 
@@ -84,6 +84,9 @@ pkg shell
 
 # Python REPL with pkg module exposed
 pkg py
+
+# Python interpreter can also execute files
+pkg py package.py
 ```
 
 ### Python
@@ -95,10 +98,10 @@ from pkg import Package, Env, Evar, App, Storage, Solver
 storage = Storage.scan()
 print(f"Found {len(storage.packages)} packages")
 
-# Resolve dependencies
+# Resolve dependencies - returns list of package names
 solver = Solver(storage.packages)
 solution = solver.solve("maya-2026.1.0")
-print("Resolved:", solution)
+# solution = ["maya-2026.1.0", "redshift-3.5.0", "ocio-2.1.0", ...]
 
 # Create package programmatically
 p = Package("mytool", "1.0.0")
