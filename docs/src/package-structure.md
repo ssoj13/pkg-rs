@@ -29,25 +29,20 @@ packages/
 | Version | `2024.0.0` | SemVer format |
 | Full name | `maya-2024.0.0` | Unique identifier |
 
-## Default Locations
+## Package Locations
 
-**Windows:**
-- `C:\packages`
-- `%USERPROFILE%\.packager\packages`
-
-**Linux:**
-- `/opt/packages`
-- `~/.packager/packages`
-
-## Custom Locations
+Three ways to specify where packages live:
 
 ```powershell
-# CLI flag
-pkg -r C:\custom\packages list
+# 1. CLI flag (highest priority)
+pkg -r C:\packages list
+pkg --repo /opt/packages list
 
-# Environment variable
-$env:PKG_LOCATIONS = "C:\pkg1;C:\pkg2"
-pkg list
+# 2. Environment variable
+$env:PKG_LOCATIONS = "C:\pkg1;C:\pkg2"  # Windows
+export PKG_LOCATIONS="/opt/pkg1:/opt/pkg2"  # Linux
+
+# 3. Fallback: repo/ folder in current directory
 ```
 
 ## Scanning Behavior

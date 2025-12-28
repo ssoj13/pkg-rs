@@ -29,7 +29,7 @@ Binary location: `target/release/pkg.exe` (or `target/debug/pkg.exe`)
 .\bootstrap.ps1 python
 ```
 
-Wheel location: `target/wheels/packager-*.whl`
+Wheel location: `target/wheels/pkg-*.whl`
 
 ## Verification
 
@@ -39,7 +39,7 @@ pkg --version
 pkg --help
 
 # Python
-python -c "from packager import Package; print('OK')"
+python -c "from pkg import Package; print('OK')"
 ```
 
 ## Shell Completions

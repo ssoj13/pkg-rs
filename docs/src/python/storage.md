@@ -5,7 +5,7 @@ Registry of available packages discovered from filesystem.
 ## Scanning
 
 ```python
-from packager import Storage
+from pkg import Storage
 
 # Scan default locations
 storage = Storage.scan()

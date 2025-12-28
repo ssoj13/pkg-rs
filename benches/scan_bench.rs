@@ -2,7 +2,7 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::hint::black_box;
-use packager::{Solver, Storage};
+use pkg_lib::{Solver, Storage};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
@@ -20,7 +20,7 @@ fn create_package(dir: &Path, name: &str, version: &str, requires: &[&str]) {
     };
 
     let content = format!(
-        r#"from packager import Package
+        r#"from pkg import Package
 
 def get_package():
     pkg = Package("{}", "{}"){} 
@@ -71,14 +71,14 @@ fn bench_scan(c: &mut Criterion) {
         let paths = vec![dir.path().to_path_buf()];
 
         // Clear cache for cold scan
-        if let Some(cache_path) = packager::cache::Cache::cache_path() {
+        if let Some(cache_path) = pkg_lib::cache::Cache::cache_path() {
             let _ = fs::remove_file(&cache_path);
         }
 
         group.bench_with_input(BenchmarkId::new("cold", size), &size, |b, _| {
             b.iter(|| {
                 // Clear cache each iteration
-                if let Some(cache_path) = packager::cache::Cache::cache_path() {
+                if let Some(cache_path) = pkg_lib::cache::Cache::cache_path() {
                     let _ = fs::remove_file(&cache_path);
                 }
                 let storage = Storage::scan_impl(Some(&paths)).unwrap();

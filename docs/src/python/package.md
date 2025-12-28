@@ -52,7 +52,7 @@ env = pkg.effective_env("default")
 ## Example
 
 ```python
-from packager import Package, Env, Evar, App
+from pkg import Package, Env, Evar, App
 
 pkg = Package("mytool", "1.0.0")
 

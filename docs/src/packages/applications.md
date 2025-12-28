@@ -5,7 +5,7 @@ Applications define executable entry points.
 ## Basic App
 
 ```python
-from packager import App
+from pkg import App
 
 app = App("maya")
 app.path = "/opt/maya/bin/maya"

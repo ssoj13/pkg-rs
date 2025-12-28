@@ -5,7 +5,7 @@ Environments define variables that configure the runtime.
 ## Creating Environments
 
 ```python
-from packager import Env, Evar
+from pkg import Env, Evar
 
 env = Env("default")
 env.add(Evar("ROOT", "/opt/tool", "set"))

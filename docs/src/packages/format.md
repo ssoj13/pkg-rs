@@ -5,7 +5,7 @@ Every package is defined by a `package.py` file containing a `get_package()` fun
 ## Minimal Example
 
 ```python
-from packager import Package
+from pkg import Package
 
 def get_package():
     return Package("mytool", "1.0.0")
@@ -14,7 +14,7 @@ def get_package():
 ## Full Example
 
 ```python
-from packager import Package, Env, Evar, App
+from pkg import Package, Env, Evar, App
 from pathlib import Path
 import sys
 

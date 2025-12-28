@@ -7,7 +7,7 @@ Environment and variable classes.
 Single environment variable.
 
 ```python
-from packager import Evar
+from pkg import Evar
 
 # Constructor
 evar = Evar(name: str, value: str, action: str = "set")
@@ -26,7 +26,7 @@ evar = Evar(name: str, value: str, action: str = "set")
 Collection of environment variables.
 
 ```python
-from packager import Env, Evar
+from pkg import Env, Evar
 
 env = Env("default")
 env.add(Evar("ROOT", "/opt/tool", "set"))
@@ -73,7 +73,7 @@ solved = env.solve()
 ## Complete Example
 
 ```python
-from packager import Env, Evar
+from pkg import Env, Evar
 
 # Create environment
 env = Env("production")

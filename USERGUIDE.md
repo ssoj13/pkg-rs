@@ -1,6 +1,6 @@
 # USERGUIDE
 
-packager-rs is a VFX/DCC package manager. You describe software in `package.py`,
+pkg-rs is a VFX/DCC package manager. You describe software in `package.py`,
 then the CLI scans repositories, resolves dependencies, and builds an
 environment to launch tools. Python is used only to author and execute
 `package.py`; everything else is a single Rust binary.
@@ -158,7 +158,7 @@ instant and you can test `run/solve` interactively.
 ## Python REPL and Scripts
 
 ```powershell
-pkg py                 # REPL with packager module loaded
+pkg py                 # REPL with pkg module loaded
 pkg py script.py       # run a script
 pkg py script.py -- -v # pass args
 ```
@@ -202,7 +202,7 @@ packages/
 Minimal `package.py`:
 
 ```python
-from packager import Package
+from pkg import Package
 
 def get_package():
     return Package("mytool", "1.0.0")
@@ -211,7 +211,7 @@ def get_package():
 Typical `package.py`:
 
 ```python
-from packager import Package, Env, Evar, App
+from pkg import Package, Env, Evar, App
 from pathlib import Path
 import sys
 

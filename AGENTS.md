@@ -1,6 +1,6 @@
-# AGENTS.md - packager-rs Architecture Guide
+# AGENTS.md - pkg-rs Architecture Guide
 
-This document provides comprehensive dataflow and codepath diagrams for the packager-rs codebase. It serves as a reference for both AI agents and human developers to understand the system architecture.
+This document provides comprehensive dataflow and codepath diagrams for the pkg-rs codebase. It serves as a reference for both AI agents and human developers to understand the system architecture.
 
 ---
 
@@ -18,7 +18,7 @@ This document provides comprehensive dataflow and codepath diagrams for the pack
 
 ## System Overview
 
-packager-rs is a VFX package manager similar to [rez](https://github.com/AcademySoftwareFoundation/rez). It provides:
+pkg-rs is a VFX package manager similar to [rez](https://github.com/AcademySoftwareFoundation/rez). It provides:
 
 - **Package Discovery**: Scans filesystem for `package.py` definitions
 - **Dependency Resolution**: Uses PubGrub algorithm for SAT solving
@@ -142,7 +142,7 @@ Storage {
 ```mermaid
 graph LR
     subgraph LibRoot["lib.rs"]
-        LIB[packager]
+        LIB[pkg_lib]
     end
 
     subgraph CoreModules["Core Modules"]
@@ -519,7 +519,7 @@ The library exposes a Python module via PyO3:
 
 ```
 #[pymodule]
-packager (lib.rs)
+pkg_lib (lib.rs)
 ├── Package    (pyclass)
 ├── Env        (pyclass)
 ├── Evar       (pyclass)

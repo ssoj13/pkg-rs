@@ -41,7 +41,7 @@ pkg -x old -x legacy list
 
 ## -u, --user-packages
 
-Include user packages from `~/.packager/packages`.
+Include user packages from `~/packages` (home directory).
 
 ```powershell
 pkg -u list

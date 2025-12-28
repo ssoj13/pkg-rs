@@ -5,7 +5,7 @@ Dependency resolver using PubGrub SAT algorithm.
 ## Constructor
 
 ```python
-from packager import Solver
+from pkg import Solver
 
 solver = Solver(packages: list[Package])
 ```
@@ -24,7 +24,7 @@ solution = solver.solve_reqs(["maya@>=2024", "houdini"])
 ## Example
 
 ```python
-from packager import Storage, Solver
+from pkg import Storage, Solver
 
 storage = Storage.scan()
 solver = Solver(storage.packages)

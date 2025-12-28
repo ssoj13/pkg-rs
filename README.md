@@ -1,4 +1,4 @@
-# packager-rs
+# pkg-rs
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/)
@@ -152,7 +152,7 @@ packages/
 ## package.py Format
 
 ```python
-from packager import Package, Env, Evar, App
+from pkg import Package, Env, Evar, App
 from pathlib import Path
 import sys
 
@@ -196,7 +196,7 @@ Commands:
   graph       Show dependency graph (DOT/Mermaid)
   scan        Scan locations for packages
   shell       Interactive mode (tab completion)
-  py          Python REPL with packager
+  py          Python REPL with pkg
   gen-repo    Generate test repository
   completions Generate shell completions
 
@@ -271,19 +271,19 @@ Use `@` syntax for version requirements:
 
 ## Configuration
 
-### Environment Variables
+### Package Locations
 
-- `PKG_LOCATIONS` - Additional search paths (`;` on Windows, `:` on Linux)
+Set `PKG_LOCATIONS` to point to your package repositories:
 
-### Default Locations
+```powershell
+# Windows
+$env:PKG_LOCATIONS = "C:\packages;D:\studio\packages"
 
-**Windows:**
-- `C:\packages`
-- `%USERPROFILE%\.packager\packages`
+# Linux
+export PKG_LOCATIONS="/opt/packages:/studio/packages"
+```
 
-**Linux:**
-- `/opt/packages`
-- `~/.packager/packages`
+If `PKG_LOCATIONS` is not set, pkg looks for a `repo/` folder in the current directory.
 
 ## Performance
 

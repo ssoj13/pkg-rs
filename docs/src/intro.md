@@ -1,6 +1,6 @@
 # Introduction
 
-**packager-rs** is a software package manager designed for VFX and DCC pipelines. It manages software packages with Python-based definitions, resolves dependencies using a SAT solver, and configures runtime environments.
+**pkg-rs** is a software package manager designed for VFX and DCC pipelines. It manages software packages with Python-based definitions, resolves dependencies using a SAT solver, and configures runtime environments.
 
 ## Key Features
 

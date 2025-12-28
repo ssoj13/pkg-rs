@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Alex Joss"]
 description = "Software package manager with Python-based package definitions"
 license = "MIT"
-repository = "https://github.com/your-org/packager-rs"
+repository = "https://github.com/jossware/pkg-rs"
 keywords = ["package-manager", "pipeline", "vfx", "dcc"]
 categories = ["development-tools"]
 

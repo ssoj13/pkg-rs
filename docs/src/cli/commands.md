@@ -97,7 +97,7 @@ pkg sh          # Alias
 
 ## py
 
-Python REPL with packager module.
+Python REPL with pkg module.
 
 ```powershell
 pkg py                    # Interactive REPL

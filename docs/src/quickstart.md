@@ -36,7 +36,7 @@ mypackages/
 2. Write `package.py`:
 
 ```python
-from packager import Package, Env, Evar, App
+from pkg import Package, Env, Evar, App
 
 def get_package():
     pkg = Package("mytool", "1.0.0")
@@ -66,7 +66,7 @@ pkg -r ./mypackages run mytool
 ## Python Usage
 
 ```python
-from packager import Storage, Solver, Package
+from pkg import Storage, Solver, Package
 
 # Scan packages
 storage = Storage.scan()

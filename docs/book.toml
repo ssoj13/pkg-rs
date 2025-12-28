@@ -9,5 +9,5 @@ build-dir = "book"
 
 [output.html]
 default-theme = "rust"
-git-repository-url = "https://github.com/your-org/packager-rs"
-edit-url-template = "https://github.com/your-org/packager-rs/edit/main/docs/{path}"
+git-repository-url = "https://github.com/jossware/pkg-rs"
+edit-url-template = "https://github.com/jossware/pkg-rs/edit/main/docs/{path}"

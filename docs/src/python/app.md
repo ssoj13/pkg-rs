@@ -5,7 +5,7 @@ Application entry point definition.
 ## Constructor
 
 ```python
-from packager import App
+from pkg import App
 
 app = App(name: str)
 ```
@@ -35,7 +35,7 @@ app = App("maya") \
 ## Example
 
 ```python
-from packager import App
+from pkg import App
 
 # Basic app
 app = App("houdini")
@@ -57,7 +57,7 @@ app.properties["description"] = "Procedural 3D"
 ## Adding to Package
 
 ```python
-from packager import Package, App
+from pkg import Package, App
 
 pkg = Package("houdini", "21.0.0")
 
