@@ -3,33 +3,57 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org/)
 
-VFX/DCC package manager with Python-based definitions, SAT-based dependency resolution, and environment management.
+Package manager for VFX/DCC applications: Maya, Houdini, Nuke, and everything else in your pipeline.
 
-Start here: see `USERGUIDE.md` for step-by-step workflows (scan, list, env, run, package.py).
+Start here: see [USERGUIDE.md](USERGUIDE.md) for step-by-step workflows.
+
+## Why?
+
+You have Maya 2024, Maya 2025, three versions of Houdini, Redshift that works only with certain versions, and a dozen studio tools. Each needs specific environment variables, paths, and dependencies. This tool:
+
+1. **Knows what works together** - request "maya + redshift + studio_tools" and it finds compatible versions automatically. If there's a conflict, it explains why in plain English
+2. **Sets up the environment** - PATH, PYTHONPATH, license servers, plugin paths - all configured and ready
+3. **Launches apps correctly** - `pkg run maya` and you're in, with everything loaded
 
 ## Features
 
-- **Python package definitions** - Define packages in `package.py` files with full Python expressiveness
-- **SAT-based solver** - PubGrub algorithm for reliable dependency resolution with conflict explanation
-- **Environment management** - Variables with Set/Append/Insert actions and token expansion
-- **Fast scanning** - Parallel directory walking (jwalk) with JSON cache for quick rescans
-- **CLI and Python API** - Use from command line or embed in Python scripts
-- **Cross-platform** - Windows and Linux support
+- **Embedded Python** - package definitions are Python files, but you don't need Python installed. Interpreter is built-in
+- **Smart dependency solver** - finds compatible versions automatically. Conflicts? You'll know exactly which packages disagree and why
+- **Environment management** - variables, paths, tokens like `{MAYA_ROOT}/bin` that expand correctly
+- **Fast** - parallel scanning, JSON cache, rescans in milliseconds
+- **CLI + Python API** - use from terminal or embed in your pipeline scripts
+- **Cross-platform** - Windows and Linux
+
+## Why not rez?
+
+[rez](https://github.com/AcademySoftwareFoundation/rez) is the industry standard and it's great. But:
+
+| | pkg-rs | rez |
+|---|--------|-----|
+| Install | single binary, no dependencies | Python + pip + system packages |
+| Speed | 30ms warm scan, 90μs solve | seconds |
+| Python for packages | embedded, always works | system Python, version conflicts possible |
+| Conflict messages | "maya-2024 needs redshift>=3.5, but you requested redshift-3.0" | sometimes cryptic |
+| Windows | native | works but painful |
+
+pkg-rs is not a rez replacement for large studios with existing infrastructure. It's for smaller teams, freelancers, or anyone who wants something that just works out of the box.
 
 ## Installation
+
+```powershell
+cargo install pkg-rs
+```
+
+That's it. Single binary, no Python required, no dependencies.
+
+### From source
 
 ```powershell
 # Build CLI
 .\bootstrap.ps1 build
 
-# Build and install Python module
+# Build Python module (for embedding in pipeline scripts)
 .\bootstrap.ps1 python -i
-
-# Run tests
-.\bootstrap.ps1 test
-
-# Run benchmarks
-.\bootstrap.ps1 bench
 ```
 
 ## Quick Start
@@ -57,6 +81,9 @@ pkg run maya
 
 # Interactive shell
 pkg shell
+
+# Python REPL with pkg module exposed
+pkg py
 ```
 
 ### Python
@@ -328,6 +355,39 @@ app.env_name = "default"
 app.args = ["-batch"]
 app.cwd = "/project"
 ```
+
+## Try It Out
+
+Don't want to spend a week setting up test packages? There's a built-in repository generator:
+
+```powershell
+# Generate 200 packages with realistic dependencies
+pkg gen-repo -n 200 -V 5 --dep-rate 0.4 -o ./test-repo
+
+# Point to it
+$env:PKG_LOCATIONS = "./test-repo"
+
+# Play around
+pkg list
+pkg solve maya houdini redshift
+pkg env maya -s
+```
+
+Or use the ready-made test scripts in `tests/`:
+
+```powershell
+# Windows
+./tests/test.ps1 gen       # generate test repos
+./tests/test.ps1 basic     # list, info, env, solve
+./tests/test.ps1 conflict  # dependency conflict scenarios
+
+# Linux/macOS
+./tests/test.sh gen
+./tests/test.sh basic
+./tests/test.sh conflict
+```
+
+The generator creates packages with names like `maya`, `houdini`, `redshift`, `arnold`, `usd` — familiar VFX software with plausible version numbers and dependency chains.
 
 ## License
 
