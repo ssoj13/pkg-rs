@@ -259,6 +259,63 @@ pub fn cmd_generate_repo(
             content.push_str(
                 "    env.add(Evar(\"PATH\", str(ROOT / 'bin'), \"insert\"))\n"
             );
+            
+            // Add DCC-specific env vars randomly
+            let dcc_vars: &[(&str, &[&str])] = &[
+                // Maya vars
+                ("maya", &["MAYA_PLUG_IN_PATH", "MAYA_SCRIPT_PATH", "MAYA_ICON_PATH", 
+                          "MAYA_MODULE_PATH", "MAYA_PRESET_PATH", "XBMLANGPATH"]),
+                ("mtoa", &["MAYA_PLUG_IN_PATH", "MAYA_SCRIPT_PATH", "MTOA_TEMPLATES_PATH"]),
+                ("arnold", &["ARNOLD_PLUGIN_PATH", "ARNOLD_PROCEDURAL_PATH"]),
+                ("yeti", &["MAYA_PLUG_IN_PATH", "YETI_HOME", "YETI_TMP"]),
+                ("golaem", &["MAYA_PLUG_IN_PATH", "GOLAEM_LICENSE", "GOLAEM_TMP"]),
+                ("bifrost", &["BIFROST_LIB_CONFIG_FILES", "MAYA_PLUG_IN_PATH"]),
+                ("xgen", &["XGEN_LOCATION", "MAYA_PLUG_IN_PATH"]),
+                // Houdini vars
+                ("houdini", &["HOUDINI_PATH", "HOUDINI_OTLSCAN_PATH", "HOUDINI_DSO_PATH",
+                             "HOUDINI_GALLERY_PATH", "HOUDINI_MENU_PATH", "HSITE"]),
+                ("htoa", &["HOUDINI_PATH", "HOUDINI_OTLSCAN_PATH"]),
+                ("sidefx_labs", &["HOUDINI_PATH", "HOUDINI_OTLSCAN_PATH"]),
+                ("mops", &["HOUDINI_PATH", "HOUDINI_OTLSCAN_PATH"]),
+                ("qlib", &["HOUDINI_PATH", "QLIB", "QLIB_HOUDINI_PATH"]),
+                ("karma", &["HOUDINI_PATH", "KARMA_PROCEDURALS_PATH"]),
+                // Nuke vars
+                ("nuke", &["NUKE_PATH", "NUKE_GIZMO_PATH", "NUKE_PLUGIN_PATH",
+                          "NUKE_TEMP_DIR", "FOUNDRY_LICENSE_FILE"]),
+                ("mocha_pro", &["NUKE_PATH", "MOCHA_LICENSE"]),
+                ("furnace", &["NUKE_PATH", "FURNACE_LICENSE"]),
+                // Common
+                ("python", &["PYTHONPATH", "PYTHONHOME"]),
+                ("usd", &["PXR_PLUGINPATH_NAME", "USD_ASSET_RESOLVER"]),
+                ("ocio", &["OCIO", "OCIO_ACTIVE_DISPLAYS"]),
+                ("redshift", &["REDSHIFT_COREDATAPATH", "REDSHIFT_PLUG_IN_PATH"]),
+                ("vray", &["VRAY_PATH", "VRAY_AUTH_CLIENT_FILE_PATH"]),
+            ];
+            
+            // Find matching DCC vars and add some randomly
+            for (pattern, vars) in dcc_vars {
+                if pkg_name.contains(pattern) {
+                    for var in *vars {
+                        if rng.next_f64() < 0.5 {
+                            let subdir = match *var {
+                                v if v.contains("SCRIPT") || v.contains("PYTHON") => "scripts",
+                                v if v.contains("PLUG") || v.contains("DSO") => "plug-ins",
+                                v if v.contains("ICON") || v.contains("XBML") => "icons",
+                                v if v.contains("OTL") || v.contains("GIZMO") => "otls",
+                                v if v.contains("MENU") => "menus",
+                                v if v.contains("MODULE") || v.contains("PATH") => "modules",
+                                _ => "lib",
+                            };
+                            content.push_str(&format!(
+                                "    env.add(Evar(\"{}\", str(ROOT / '{}'), \"append\"))\n",
+                                var, subdir
+                            ));
+                        }
+                    }
+                    break;
+                }
+            }
+            
             content.push_str("    p.add_env(env)\n");
             
             if rng.next_f64() < 0.3 {

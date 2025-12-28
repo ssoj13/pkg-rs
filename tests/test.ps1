@@ -68,16 +68,7 @@ function Run-Basic {
     Write-Host ""
     
     Write-Host "==================================================" -ForegroundColor Cyan
-    Write-Host "3. TOOLSET RESOLVE: maya-fx (dry-run)" -ForegroundColor Yellow
-    Write-Host "   maya + bifrost + phoenix_fd + fumefx + mash + boss +" -ForegroundColor DarkGray
-    Write-Host "   redshift + arnold + mtoa + usd + alembic + ocio +" -ForegroundColor DarkGray  
-    Write-Host "   python + numpy + pyside" -ForegroundColor DarkGray
-    Write-Host ""
-    & $Pkg env -n maya bifrost phoenix_fd fumefx mash boss redshift arnold mtoa usd alembic ocio python numpy pyside
-    Write-Host ""
-    
-    Write-Host "==================================================" -ForegroundColor Cyan
-    Write-Host "4. TOOLSET ENV: maya-fx" -ForegroundColor Yellow
+    Write-Host "3. TOOLSET ENV: maya-fx" -ForegroundColor Yellow
     & $Pkg env maya bifrost phoenix_fd fumefx mash boss redshift arnold mtoa usd alembic ocio python numpy pyside
     Write-Host ""
     
