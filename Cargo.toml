@@ -1,0 +1,67 @@
+[package]
+name = "pkg-rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Alex Joss"]
+description = "Software package manager with Python-based package definitions"
+license = "MIT"
+repository = "https://github.com/your-org/packager-rs"
+keywords = ["package-manager", "pipeline", "vfx", "dcc"]
+categories = ["development-tools"]
+
+[lib]
+name = "pkg_lib"
+# cdylib for Python (.pyd), rlib for Rust library
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "pkg"
+path = "src/pkg/main.rs"
+
+[dependencies]
+# Versioning and dependency resolution
+semver = "1.0"
+pubgrub = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.9"
+
+# Pattern matching
+regex = "1.12"
+
+# Platform directories
+dirs = "6.0"
+
+# Parallel directory walking
+jwalk = "0.8"
+
+# Error handling
+thiserror = "2.0"
+
+# Python bindings via PyO3
+pyo3 = { version = "0.27", features = ["extension-module"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+
+# Logging (optional but useful)
+log = "0.4"
+env_logger = "0.11"
+
+# REPL shell
+rustyline = { version = "17", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "scan_bench"
+harness = false
+
+# [profile.release]
+# lto = true
+# codegen-units = 1
