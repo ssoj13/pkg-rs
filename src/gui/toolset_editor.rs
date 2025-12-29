@@ -108,6 +108,7 @@ pub fn render(ctx: &egui::Context, state: &mut ToolsetEditorState) -> bool {
         .collapsible(false)
         .resizable(true)
         .default_width(400.0)
+        .default_height(500.0)
         .show(ctx, |ui| {
             // Error/success messages
             if let Some(err) = &state.error {

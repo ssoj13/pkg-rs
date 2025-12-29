@@ -41,10 +41,11 @@ fn render_packages(
     bases.dedup();
 
     for base in bases {
-        let versions: Vec<_> = packages.iter()
+        let mut versions: Vec<_> = packages.iter()
             .filter(|p| p.base == base)
             .copied()
             .collect();
+        versions.sort_by(|a, b| a.version.cmp(&b.version));
 
         if versions.len() == 1 {
             let pkg = versions[0];
@@ -86,12 +87,17 @@ fn render_toolsets(
     
     // Group by source file
     let mut by_source: BTreeMap<String, Vec<&Package>> = BTreeMap::new();
-    
+
     for pkg in packages {
         let source = pkg.package_source.clone().unwrap_or_else(|| "(unknown)".to_string());
         by_source.entry(source).or_default().push(pkg);
     }
-    
+
+    // Sort toolsets within each file by name
+    for toolsets in by_source.values_mut() {
+        toolsets.sort_by(|a, b| a.base.cmp(&b.base));
+    }
+
     for (source, toolsets) in &by_source {
         // Extract filename from path
         let filename = Path::new(source)

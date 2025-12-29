@@ -30,11 +30,9 @@ pub struct PkgApp {
 
 impl PkgApp {
     /// Create new app with storage.
-    pub fn new(cc: &eframe::CreationContext<'_>, storage: Storage) -> Self {
-        // Load persisted state if available
-        let state = cc.storage
-            .and_then(|s| eframe::get_value(s, "pkg_app_state"))
-            .unwrap_or_default();
+    pub fn new(_cc: &eframe::CreationContext<'_>, storage: Storage) -> Self {
+        // Load state from ~/.pkg/prefs.json
+        let state = AppState::load();
 
         Self {
             state,
@@ -46,10 +44,20 @@ impl PkgApp {
 
     /// Run the GUI application.
     pub fn run(storage: Storage) -> eframe::Result<()> {
+        // Load state to get window size
+        let state = AppState::load();
+        
+        let mut viewport = egui::ViewportBuilder::default()
+            .with_inner_size([state.window_width, state.window_height])
+            .with_min_inner_size([800.0, 600.0]);
+        
+        // Restore window position if saved
+        if let (Some(x), Some(y)) = (state.window_x, state.window_y) {
+            viewport = viewport.with_position([x, y]);
+        }
+        
         let options = eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default()
-                .with_inner_size([1200.0, 800.0])
-                .with_min_inner_size([800.0, 600.0]),
+            viewport,
             ..Default::default()
         };
 
@@ -127,14 +135,16 @@ impl PkgApp {
     
     /// Create new .toml file for toolsets.
     fn create_new_toolset_file(&mut self) {
-        // Get user toolsets directory
-        let dir = match toolset::user_toolsets_dir() {
-            Some(d) => d,
-            None => {
-                log::warn!("[GUI] Cannot determine user toolsets directory");
-                return;
-            }
-        };
+        // Use last directory or fallback to user toolsets dir
+        let dir = self.state.last_toolset_dir
+            .as_ref()
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+            .or_else(toolset::user_toolsets_dir)
+            .unwrap_or_else(|| {
+                log::warn!("[GUI] Cannot determine toolsets directory");
+                std::path::PathBuf::from(".")
+            });
         
         // Ensure directory exists
         let _ = std::fs::create_dir_all(&dir);
@@ -169,6 +179,11 @@ impl PkgApp {
             
             log::info!("[GUI] Created toolset '{}' in {:?}", toolset_name, path);
             
+            // Save directory for next time
+            if let Some(parent) = path.parent() {
+                self.state.last_toolset_dir = Some(parent.to_string_lossy().to_string());
+            }
+            
             // Refresh storage to pick up new file
             self.refresh_storage();
         }
@@ -176,11 +191,28 @@ impl PkgApp {
 }
 
 impl eframe::App for PkgApp {
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, "pkg_app_state", &self.state);
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+        // Save to ~/.pkg/prefs.json instead of eframe storage
+        self.state.save();
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Exit on Escape
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        
+        // Track window size/position changes
+        ctx.input(|i| {
+            if let Some(rect) = i.viewport().inner_rect {
+                self.state.window_width = rect.width();
+                self.state.window_height = rect.height();
+            }
+            if let Some(pos) = i.viewport().outer_rect {
+                self.state.window_x = Some(pos.min.x);
+                self.state.window_y = Some(pos.min.y);
+            }
+        });
         // Top panel with mode selector
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -194,32 +226,58 @@ impl eframe::App for PkgApp {
 
         // Left panel: package list
         egui::SidePanel::left("package_list")
-            .default_width(250.0)
+            .default_width(self.state.left_panel_width)
             .resizable(true)
             .show(ctx, |ui| {
+                // Track panel width
+                self.state.left_panel_width = ui.available_width();
                 if let Some(action) = package_list::render(ui, &mut self.state, &self.storage) {
                     self.handle_list_action(action);
                 }
             });
 
-        // Right panel: tree editor or graph
+        // Central panel with vertical split: Tree/Graph on top, solve result below
         egui::CentralPanel::default().show(ctx, |ui| {
-            match self.state.right_panel {
-                state::RightPanel::Tree => {
-                    tree_editor::render(ui, &mut self.state, &self.storage);
+            // Calculate available height for split
+            let available = ui.available_height();
+            let has_solve = self.solve_result.show;
+            
+            // Top part: Tree/Graph view
+            let top_height = if has_solve {
+                (available * 0.55).max(200.0)  // 55% for view when solve shown
+            } else {
+                available - 40.0  // Leave space for action bar
+            };
+            
+            let tree_action = egui::Frame::NONE.show(ui, |ui| {
+                ui.set_max_height(top_height);
+                match self.state.right_panel {
+                    state::RightPanel::Tree => {
+                        tree_editor::render(ui, &mut self.state, &self.storage)
+                    }
+                    state::RightPanel::Graph => {
+                        node_graph::render(ui, &mut self.state, &self.storage);
+                        None
+                    }
                 }
-                state::RightPanel::Graph => {
-                    node_graph::render(ui, &mut self.state, &self.storage);
-                }
+            }).inner;
+
+            // Handle tree actions
+            if let Some(tree_editor::TreeAction::Refresh) = tree_action {
+                self.refresh_storage();
             }
 
-            // Bottom actions
             ui.separator();
+            
+            // Action bar
             actions::render(ui, &mut self.state, &self.storage, &mut self.solve_result);
+            
+            // Solve result (inline, below actions)
+            if has_solve {
+                ui.separator();
+                actions::render_solve_inline(ui, &mut self.state, &mut self.solve_result);
+            }
         });
-
-        // Solve result popup window
-        actions::render_solve_window(ctx, &mut self.solve_result);
         
         // Toolset editor window
         if toolset_editor::render(ctx, &mut self.toolset_editor) {
