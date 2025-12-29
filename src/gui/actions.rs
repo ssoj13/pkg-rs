@@ -43,10 +43,15 @@ pub fn render(ui: &mut Ui, state: &mut AppState, storage: &Storage, solve_result
 
         ui.separator();
 
-        // Export dropdown
+        // Export dropdown - default to current OS shell
+        #[cfg(windows)]
+        let default_shell = "PowerShell";
+        #[cfg(not(windows))]
+        let default_shell = "Bash";
+        
         ui.add_enabled_ui(has_selection, |ui| {
             egui::ComboBox::from_label("Export")
-                .selected_text("...")
+                .selected_text(default_shell)
                 .show_ui(ui, |ui| {
                     if ui.selectable_label(false, "Windows (.cmd)").clicked() {
                         debug!("[GUI] Export CMD clicked");

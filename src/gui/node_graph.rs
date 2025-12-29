@@ -264,7 +264,11 @@ impl NodeGraphState {
         }
         
         // Run layout algorithm
-        let config = LayoutConfig { h_spacing, v_spacing };
+        let config = LayoutConfig {
+            h_spacing,
+            v_spacing,
+            node_sep: 20.0,
+        };
         let layout_result = layout_graph(layout_nodes, layout_edges, config);
         
         // Create nodes with calculated positions

@@ -128,25 +128,49 @@ impl PkgApp {
     /// Create new .toml file for toolsets.
     fn create_new_toolset_file(&mut self) {
         // Get user toolsets directory
-        if let Some(dir) = toolset::user_toolsets_dir() {
-            // Ensure directory exists
-            let _ = std::fs::create_dir_all(&dir);
+        let dir = match toolset::user_toolsets_dir() {
+            Some(d) => d,
+            None => {
+                log::warn!("[GUI] Cannot determine user toolsets directory");
+                return;
+            }
+        };
+        
+        // Ensure directory exists
+        let _ = std::fs::create_dir_all(&dir);
+        
+        // Synchronous file dialog (blocks UI briefly but works reliably)
+        let file = rfd::FileDialog::new()
+            .set_title("Create Toolset File")
+            .set_directory(&dir)
+            .set_file_name("new-toolsets.toml")
+            .add_filter("TOML", &["toml"])
+            .save_file();
+        
+        if let Some(path) = file {
+            // Extract name from filename (without .toml)
+            let toolset_name = path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("new-toolset")
+                .to_string();
             
-            // Open save dialog
-            let dir_clone = dir.clone();
-            std::thread::spawn(move || {
-                let file = rfd::FileDialog::new()
-                    .set_title("Create Toolset File")
-                    .set_directory(&dir_clone)
-                    .set_file_name("new-toolsets.toml")
-                    .add_filter("TOML", &["toml"])
-                    .save_file();
-                
-                if let Some(path) = file {
-                    // Create empty file
-                    let _ = std::fs::write(&path, "# Toolsets\n");
-                }
-            });
+            // Create dummy toolset so file appears in list
+            let def = toolset::ToolsetDef {
+                version: "1.0.0".to_string(),
+                description: Some("New toolset".to_string()),
+                requires: vec![],
+                tags: vec![],
+            };
+            
+            if let Err(e) = toolset::save_toolset(&path, &toolset_name, &def) {
+                log::warn!("[GUI] Failed to create toolset file: {}", e);
+                return;
+            }
+            
+            log::info!("[GUI] Created toolset '{}' in {:?}", toolset_name, path);
+            
+            // Refresh storage to pick up new file
+            self.refresh_storage();
         }
     }
 }
