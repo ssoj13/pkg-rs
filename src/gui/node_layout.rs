@@ -3,7 +3,7 @@
 //! Implements Sugiyama-style hierarchical layout:
 //! 1. Layer assignment (provided by caller via depth)
 //! 2. Crossing minimization (barycenter heuristic)
-//! 3. Coordinate assignment (median alignment with proper spacing)
+//! 3. Coordinate assignment (align with neighbors, respect order)
 
 use std::collections::HashMap;
 
@@ -78,8 +78,8 @@ pub fn layout_graph(
     }
 
     // Build adjacency (both directions)
-    let mut adj_upper: HashMap<String, Vec<String>> = HashMap::new(); // neighbors in layer-1
-    let mut adj_lower: HashMap<String, Vec<String>> = HashMap::new(); // neighbors in layer+1
+    let mut adj_upper: HashMap<String, Vec<String>> = HashMap::new();
+    let mut adj_lower: HashMap<String, Vec<String>> = HashMap::new();
 
     for edge in &edges {
         let from_layer = node_map.get(&edge.from).map(|n| n.layer);
@@ -100,32 +100,32 @@ pub fn layout_graph(
     let mut layer_vec: Vec<Vec<String>> = Vec::with_capacity(max_layer + 1);
     for i in 0..=max_layer {
         let mut layer = layers.remove(&i).unwrap_or_default();
-        layer.sort(); // Initial alphabetical order
+        layer.sort();
         layer_vec.push(layer);
     }
 
-    // Phase 1: Crossing minimization via barycenter
+    // Phase 1: Crossing minimization - determine ORDER within each layer
     let mut positions: HashMap<String, usize> = HashMap::new();
     update_positions(&layer_vec, &mut positions);
 
-    for _ in 0..20 {
+    for _ in 0..24 {
         // Forward sweep
         for layer_idx in 1..layer_vec.len() {
             order_by_barycenter(&mut layer_vec[layer_idx], &adj_upper, &positions);
-            update_layer_positions(&layer_vec[layer_idx], layer_idx, &mut positions);
+            update_layer_positions(&layer_vec[layer_idx], &mut positions);
         }
         // Backward sweep
         for layer_idx in (0..layer_vec.len().saturating_sub(1)).rev() {
             order_by_barycenter(&mut layer_vec[layer_idx], &adj_lower, &positions);
-            update_layer_positions(&layer_vec[layer_idx], layer_idx, &mut positions);
+            update_layer_positions(&layer_vec[layer_idx], &mut positions);
         }
     }
 
-    // Phase 2: Y coordinate assignment
-    // Start with initial placement
-    let mut y_coords: HashMap<String, f32> = HashMap::new();
+    // Phase 2: Y coordinate assignment - KEEP ORDER, align with neighbors
     let spacing = config.v_spacing.max(20.0);
+    let mut y_coords: HashMap<String, f32> = HashMap::new();
     
+    // Initial placement: evenly spaced
     for layer in &layer_vec {
         let mut y = 100.0;
         for id in layer {
@@ -135,61 +135,35 @@ pub fn layout_graph(
         }
     }
 
-    // Iterative alignment - align nodes with their connected neighbors
-    for _ in 0..30 {
-        let mut changed = false;
+    // Iterative alignment - move nodes toward neighbors WITHOUT changing order
+    for _ in 0..50 {
+        let mut total_delta: f32 = 0.0;
 
         // Forward: align with upper neighbors
         for layer_idx in 1..layer_vec.len() {
-            let layer = &layer_vec[layer_idx];
-            let mut new_ys: Vec<(String, f32)> = Vec::new();
-
-            for id in layer {
-                let neighbors = adj_upper.get(id).map(|v| v.as_slice()).unwrap_or(&[]);
-                let ideal = if neighbors.is_empty() {
-                    y_coords.get(id).copied().unwrap_or(100.0)
-                } else {
-                    median_y(neighbors, &y_coords)
-                };
-                new_ys.push((id.clone(), ideal));
-            }
-
-            // Sort by ideal Y to maintain order
-            new_ys.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-            // Assign with spacing constraints
-            if let Some(delta) = assign_with_spacing(&new_ys, &node_map, spacing, &mut y_coords) {
-                if delta > 1.0 {
-                    changed = true;
-                }
-            }
+            let delta = align_layer_to_neighbors(
+                &layer_vec[layer_idx],
+                &adj_upper,
+                &node_map,
+                spacing,
+                &mut y_coords,
+            );
+            total_delta += delta;
         }
 
         // Backward: align with lower neighbors
         for layer_idx in (0..layer_vec.len().saturating_sub(1)).rev() {
-            let layer = &layer_vec[layer_idx];
-            let mut new_ys: Vec<(String, f32)> = Vec::new();
-
-            for id in layer {
-                let neighbors = adj_lower.get(id).map(|v| v.as_slice()).unwrap_or(&[]);
-                let ideal = if neighbors.is_empty() {
-                    y_coords.get(id).copied().unwrap_or(100.0)
-                } else {
-                    median_y(neighbors, &y_coords)
-                };
-                new_ys.push((id.clone(), ideal));
-            }
-
-            new_ys.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-            if let Some(delta) = assign_with_spacing(&new_ys, &node_map, spacing, &mut y_coords) {
-                if delta > 1.0 {
-                    changed = true;
-                }
-            }
+            let delta = align_layer_to_neighbors(
+                &layer_vec[layer_idx],
+                &adj_lower,
+                &node_map,
+                spacing,
+                &mut y_coords,
+            );
+            total_delta += delta;
         }
 
-        if !changed {
+        if total_delta < 1.0 {
             break;
         }
     }
@@ -197,7 +171,7 @@ pub fn layout_graph(
     // Center vertically
     center_graph(&mut y_coords);
 
-    // Build final positions (X based on layer, Y from algorithm)
+    // Build final positions
     let mut result = HashMap::new();
     for (id, node) in &node_map {
         let x = (max_layer - node.layer) as f32 * config.h_spacing + 100.0;
@@ -221,7 +195,7 @@ fn update_positions(layers: &[Vec<String>], positions: &mut HashMap<String, usiz
     }
 }
 
-fn update_layer_positions(layer: &[String], _layer_idx: usize, positions: &mut HashMap<String, usize>) {
+fn update_layer_positions(layer: &[String], positions: &mut HashMap<String, usize>) {
     for (i, id) in layer.iter().enumerate() {
         positions.insert(id.clone(), i);
     }
@@ -251,6 +225,69 @@ fn order_by_barycenter(
     *layer = barycenters.into_iter().map(|(id, _)| id).collect();
 }
 
+/// Align layer nodes toward their neighbors while maintaining order.
+fn align_layer_to_neighbors(
+    layer: &[String],
+    adj: &HashMap<String, Vec<String>>,
+    node_map: &HashMap<String, LayoutNode>,
+    spacing: f32,
+    y_coords: &mut HashMap<String, f32>,
+) -> f32 {
+    if layer.is_empty() {
+        return 0.0;
+    }
+
+    // Calculate ideal Y for each node (median of neighbors)
+    let ideals: Vec<f32> = layer.iter().map(|id| {
+        let neighbors = adj.get(id).map(|v| v.as_slice()).unwrap_or(&[]);
+        if neighbors.is_empty() {
+            y_coords.get(id).copied().unwrap_or(100.0)
+        } else {
+            median_y(neighbors, y_coords)
+        }
+    }).collect();
+
+    // Current positions
+    let current: Vec<f32> = layer.iter()
+        .map(|id| y_coords.get(id).copied().unwrap_or(100.0))
+        .collect();
+
+    // Calculate shift that moves nodes toward ideals while maintaining order
+    // Strategy: shift entire layer to average delta, then compact
+    
+    let mut total_delta: f32 = 0.0;
+    
+    // Try to move each node toward its ideal, but respect min spacing with prev node
+    let mut prev_bottom: f32 = f32::MIN;
+    
+    for (i, id) in layer.iter().enumerate() {
+        let height = node_map.get(id).map(|n| n.height).unwrap_or(50.0);
+        let ideal = ideals[i];
+        let current_y = current[i];
+        
+        // Minimum Y based on previous node
+        let min_y = if prev_bottom == f32::MIN {
+            ideal // First node can go anywhere
+        } else {
+            prev_bottom + spacing
+        };
+        
+        // New Y: try ideal, but not less than min_y
+        let new_y = ideal.max(min_y);
+        
+        // Apply with dampening to avoid oscillation
+        let damped_y = current_y + (new_y - current_y) * 0.5;
+        let final_y = damped_y.max(min_y);
+        
+        total_delta += (final_y - current_y).abs();
+        y_coords.insert(id.clone(), final_y);
+        
+        prev_bottom = final_y + height;
+    }
+
+    total_delta
+}
+
 /// Get median Y of neighbors.
 fn median_y(neighbors: &[String], y_coords: &HashMap<String, f32>) -> f32 {
     let mut ys: Vec<f32> = neighbors.iter()
@@ -269,39 +306,6 @@ fn median_y(neighbors: &[String], y_coords: &HashMap<String, f32>) -> f32 {
     } else {
         ys[mid]
     }
-}
-
-/// Assign Y coordinates respecting spacing, returns max delta.
-fn assign_with_spacing(
-    sorted_nodes: &[(String, f32)],
-    node_map: &HashMap<String, LayoutNode>,
-    spacing: f32,
-    y_coords: &mut HashMap<String, f32>,
-) -> Option<f32> {
-    if sorted_nodes.is_empty() {
-        return None;
-    }
-
-    let mut max_delta: f32 = 0.0;
-
-    // Find minimum Y from sorted ideals
-    let min_ideal = sorted_nodes.iter().map(|(_, y)| *y).fold(f32::MAX, f32::min);
-    let mut current_y = min_ideal;
-
-    for (id, ideal) in sorted_nodes {
-        let height = node_map.get(id).map(|n| n.height).unwrap_or(50.0);
-        
-        // Use ideal if it's >= current_y, otherwise use current_y
-        let new_y = ideal.max(current_y);
-        
-        let old_y = y_coords.get(id).copied().unwrap_or(0.0);
-        max_delta = max_delta.max((new_y - old_y).abs());
-        
-        y_coords.insert(id.clone(), new_y);
-        current_y = new_y + height + spacing;
-    }
-
-    Some(max_delta)
 }
 
 fn center_graph(y_coords: &mut HashMap<String, f32>) {
