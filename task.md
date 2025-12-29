@@ -1,6 +1,113 @@
-﻿1. изучить возможность графического приложения с нодами и attribute editor по типу Playa. Нужно окно egui_nodes наверное.
-C:\projects\projects.rust\playa - референс.
-Нам нужно:
-  - окно с графом зависимостей При клике на ноду или ноды, они помещаются в active_selection
-  - Attribute editor Для просмотра полей выбранного package (редактировать не можем питон)
-  - что ещё там может быть? Как может выглдяеть интерфейс для создания toolsets?
+# pkg-rs GUI Implementation Plan
+
+## Overview
+GUI for pkg-rs via `pkg -g` / `pkg --gui` flag.
+
+## Directory Structure
+
+```
+~/.pkg-rs/
+  packages/              # user packages (auto-added to locations)
+    .toolsets/           # user toolsets
+      my-env.toml
+      vfx-2024.toml
+  config.toml            # GUI settings
+
+repo/
+  .toolsets/             # project toolsets
+    studio.toml
+```
+
+## Dependencies (Cargo.toml)
+
+```toml
+eframe = { version = "0.33", features = ["persistence"] }
+egui-snarl = { version = "0.9", features = ["serde"] }
+egui_extras = "0.33"
+egui_ltreeview = "0.6"
+```
+
+## File Structure
+
+```
+src/
+  gui/
+    mod.rs              # PkgApp, eframe::App impl
+    state.rs            # AppState, Selection, UIMode
+    package_list.rs     # left panel (packages/toolsets list)
+    tree_editor.rs      # TreeView: Package -> Envs -> Evars (+/- buttons)
+    node_graph.rs       # egui-snarl dependency graph
+    toolset_editor.rs   # create/edit toolsets
+    actions.rs          # Launch, Solve, Export
+```
+
+## Core Changes
+
+### storage.rs
+- Add `~/.pkg-rs/packages` to default_locations()
+
+### toolset.rs
+- Add `save_toolset(path, name, def)` for writing TOML
+
+### env.rs
+- Add export methods:
+  - `to_cmd()` -> `SET VAR=value`
+  - `to_ps1()` -> `$env:VAR = "value"`
+  - `to_sh()` -> `export VAR="value"`
+  - `to_py()` -> `os.environ['VAR'] = 'value'`
+
+### package.rs (optional)
+- `Package.launch(app_name, resolve=true, storage)` with auto-resolve
+
+## UI Layout
+
+```
++------------------------------------------------------------------+
+|  Mode: [Packages v]  [Toolsets]     [Settings]                   |
++----------------+--------------------------------------------------+
+|  maya-2026     |  [Tree] [Graph]                                  |
+|  houdini-20    |  ------------------------------------------------|
+|  redshift-3    |  v maya-2026.1.0                                 |
+|  vfx-2024      |    +- envs                                       |
+|                |    |   v default                                 |
+|  [+] New       |    |      +- PATH: /opt/maya/bin        [-]     |
+|                |    |      +- [+]                                 |
+|                |    +- apps                                       |
+|                |    |   v maya                     [> Launch]    |
+|                |    |      +- path: /opt/.../maya                 |
+|                |    +- reqs: [redshift@>=3.5]      [+]           |
+|                |    +- tags: [dcc, autodesk]       [+]           |
+|                |  ------------------------------------------------|
+|                |  [Solve]  [Export v]                             |
++----------------+--------------------------------------------------+
+```
+
+## Node Graph View
+- Depth slider: `[0 ----*---- max]` (max computed per selection)
+- Collapse/expand via double-click
+- Node colors by tags:
+  - `toolset` -> blue
+  - `dcc` -> green
+  - `render` -> orange
+
+## Actions
+
+| Action   | Description                                    |
+|----------|------------------------------------------------|
+| Solve    | `pkg.solve(storage)` -> show resolved deps     |
+| Launch   | `app.launch(env)` with auto-resolve if needed  |
+| Export   | Save env as .cmd / .ps1 / .sh / .py            |
+
+## Implementation Order
+
+1. [ ] Add export methods to Env (to_cmd, to_ps1, to_sh, to_py)
+2. [ ] Add ~/.pkg-rs/packages to Storage.default_locations()
+3. [ ] Add save_toolset() to toolset.rs
+4. [ ] Create gui/ module structure
+5. [ ] Implement PkgApp with basic eframe setup
+6. [ ] Package list panel (left)
+7. [ ] Tree editor (right, default view)
+8. [ ] Node graph view with depth slider
+9. [ ] Toolset editor with +/drag/drop
+10. [ ] Actions: Solve, Launch, Export
+11. [ ] Add -g/--gui flag to CLI
