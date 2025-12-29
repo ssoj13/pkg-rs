@@ -343,7 +343,7 @@ pub fn render(ui: &mut Ui, state: &mut AppState, storage: &Storage) {
         }
         
         ui.label("V:");
-        if ui.add(eframe::egui::Slider::new(&mut state.graph_v_spacing, 50.0..=200.0)).changed() {
+        if ui.add(eframe::egui::Slider::new(&mut state.graph_v_spacing, 10.0..=100.0)).changed() {
             graph_state.needs_rebuild = true;
         }
 

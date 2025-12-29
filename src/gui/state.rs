@@ -8,7 +8,7 @@ use super::tree_editor::TreeEditState;
 
 fn default_graph_depth() -> usize { 4 }
 fn default_h_spacing() -> f32 { 330.0 }
-fn default_v_spacing() -> f32 { 80.0 }
+fn default_v_spacing() -> f32 { 30.0 }
 
 // Solve panel column ratios (packages, apps) - env takes the rest
 fn default_solve_col1() -> f32 { 0.15 }  // packages
