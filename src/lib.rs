@@ -138,7 +138,6 @@ pub mod storage;
 pub mod token;
 pub mod toolset;
 
-#[cfg(feature = "gui")]
 pub mod gui;
 
 // Re-exports for convenience

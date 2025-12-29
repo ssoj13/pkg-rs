@@ -114,8 +114,8 @@ src/
 ## Usage
 
 ```bash
-# Build with GUI
-cargo build --features gui
+# Build
+cargo build
 
 # Run GUI
 pkg -g

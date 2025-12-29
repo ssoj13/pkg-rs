@@ -31,7 +31,6 @@ fn main() -> ExitCode {
     trace!("CLI args: repos={:?}, exclude={:?}", cli.repos, cli.exclude);
 
     // Launch GUI if requested
-    #[cfg(feature = "gui")]
     if cli.gui {
         debug!("Launching GUI");
         let storage = match build_storage(&cli.repos, &cli.exclude, cli.user_packages) {
@@ -48,12 +47,6 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         };
-    }
-
-    #[cfg(not(feature = "gui"))]
-    if cli.gui {
-        eprintln!("GUI not available. Rebuild with: cargo build --features gui");
-        return ExitCode::FAILURE;
     }
 
     // Show help if no command

@@ -45,7 +45,7 @@ pub struct Cli {
     #[arg(short = 'u', long = "user-packages", global = true, default_value = "false")]
     pub user_packages: bool,
 
-    /// Launch GUI (requires --features gui)
+    /// Launch GUI
     #[arg(short = 'g', long = "gui", global = true, default_value = "false")]
     pub gui: bool,
 
