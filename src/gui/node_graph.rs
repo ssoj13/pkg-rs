@@ -14,10 +14,6 @@ use serde::{Deserialize, Serialize};
 use crate::Storage;
 use super::state::AppState;
 
-/// Layout constants
-const HORIZONTAL_SPACING: f32 = 220.0;
-const VERTICAL_SPACING: f32 = 80.0;
-
 /// Node in the dependency graph.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PackageNode {
@@ -186,7 +182,7 @@ impl NodeGraphState {
     }
 
     /// Rebuild graph from storage.
-    pub fn rebuild(&mut self, storage: &Storage, max_depth: usize) {
+    pub fn rebuild(&mut self, storage: &Storage, max_depth: usize, h_spacing: f32, v_spacing: f32) {
         if !self.needs_rebuild {
             return;
         }
@@ -225,8 +221,8 @@ impl NodeGraphState {
             };
             node_info.insert(pkg.name.clone(), (node, depth));
 
-            // Queue children
-            if depth < max_depth || max_depth == 0 {
+            // Queue children (only if we haven't reached max depth)
+            if depth < max_depth {
                 for req in &pkg.reqs {
                     let req_base = req.split('@').next().unwrap_or(req);
                     if let Some(resolved) = storage.latest(req_base) {
@@ -238,18 +234,46 @@ impl NodeGraphState {
             }
         }
 
-        // Create nodes with layout positions
-        let mut depth_slots: HashMap<usize, usize> = HashMap::new();
+        // Use hierarchical layout algorithm
+        use super::node_layout::{LayoutNode, LayoutEdge, LayoutConfig, layout_graph};
+        
+        // Prepare layout nodes
+        let layout_nodes: Vec<LayoutNode> = node_info.iter().map(|(name, (node, _))| {
+            LayoutNode {
+                id: name.clone(),
+                layer: node.depth,
+                width: 150.0,
+                height: 30.0 + node.reqs.len() as f32 * 20.0,
+            }
+        }).collect();
+        
+        // Prepare layout edges (dependency -> dependent)
+        let mut layout_edges: Vec<LayoutEdge> = Vec::new();
+        for (parent_name, (node, _)) in &node_info {
+            for req in &node.reqs {
+                let req_base = req.split('@').next().unwrap_or(req);
+                if let Some(resolved) = storage.latest(req_base) {
+                    if node_info.contains_key(&resolved.name) {
+                        layout_edges.push(LayoutEdge {
+                            from: resolved.name.clone(),
+                            to: parent_name.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Run layout algorithm
+        let config = LayoutConfig { h_spacing, v_spacing };
+        let layout_result = layout_graph(layout_nodes, layout_edges, config);
+        
+        // Create nodes with calculated positions
         let mut name_to_node: HashMap<String, NodeId> = HashMap::new();
-
-        for (name, (node, depth)) in &node_info {
-            let slot = *depth_slots.get(depth).unwrap_or(&0);
-            depth_slots.insert(*depth, slot + 1);
-
-            let x = (actual_max_depth - depth) as f32 * HORIZONTAL_SPACING + 50.0;
-            let y = slot as f32 * VERTICAL_SPACING + 50.0;
+        
+        for (name, (node, _)) in &node_info {
+            let (x, y) = layout_result.positions.get(name).copied().unwrap_or((50.0, 50.0));
             let pos = Pos2::new(x, y);
-
+            
             let node_id = self.snarl.insert_node(pos, node.clone());
             name_to_node.insert(name.clone(), node_id);
         }
@@ -297,14 +321,25 @@ pub fn render(ui: &mut Ui, state: &mut AppState, storage: &Storage) {
 
     // Rebuild if needed
     if graph_state.needs_rebuild {
-        graph_state.rebuild(storage, state.graph_depth);
+        graph_state.rebuild(storage, state.graph_depth, state.graph_h_spacing, state.graph_v_spacing);
     }
 
     // Toolbar
     ui.horizontal(|ui| {
         ui.label("Depth:");
-        let depth_text = if state.graph_depth == 0 { "∞".to_string() } else { state.graph_depth.to_string() };
-        if ui.add(eframe::egui::Slider::new(&mut state.graph_depth, 0..=10).text(depth_text)).changed() {
+        if ui.add(eframe::egui::Slider::new(&mut state.graph_depth, 0..=10)).changed() {
+            graph_state.needs_rebuild = true;
+        }
+
+        ui.separator();
+        
+        ui.label("H:");
+        if ui.add(eframe::egui::Slider::new(&mut state.graph_h_spacing, 150.0..=500.0)).changed() {
+            graph_state.needs_rebuild = true;
+        }
+        
+        ui.label("V:");
+        if ui.add(eframe::egui::Slider::new(&mut state.graph_v_spacing, 50.0..=200.0)).changed() {
             graph_state.needs_rebuild = true;
         }
 

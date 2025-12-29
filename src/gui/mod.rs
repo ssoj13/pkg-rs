@@ -9,6 +9,7 @@ mod state;
 mod package_list;
 mod tree_editor;
 mod node_graph;
+mod node_layout;
 mod actions;
 mod toolset_editor;
 
@@ -85,7 +86,7 @@ impl PkgApp {
             }
             ListAction::NewToolset(target_file) => {
                 // Create new toolset, optionally targeting specific file
-                self.toolset_editor.new_toolset_in_file(target_file.as_deref());
+                self.toolset_editor.new_toolset(target_file.as_deref());
             }
             ListAction::DeleteToolset(pkg_name) => {
                 // Find package and use its source path

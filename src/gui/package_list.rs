@@ -113,17 +113,19 @@ fn render_toolsets(
                 state.selection.source_file = Some(source.clone());
             }
             
-            // Add toolset to this file
-            if ui.small_button("+").on_hover_text("Add toolset to this file").clicked() {
-                *action.borrow_mut() = Some(ListAction::NewToolset(Some(source.clone())));
-            }
-            
-            // Delete file (only if not "(unknown)")
-            if source != "(unknown)" {
-                if ui.small_button("×").on_hover_text("Delete this file").clicked() {
-                    *action.borrow_mut() = Some(ListAction::DeleteFile(source.clone()));
+            // Right-aligned buttons
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Delete file (only if not "(unknown)")
+                if source != "(unknown)" {
+                    if ui.small_button("×").on_hover_text("Delete this file").clicked() {
+                        *action.borrow_mut() = Some(ListAction::DeleteFile(source.clone()));
+                    }
                 }
-            }
+                // Add toolset to this file
+                if ui.small_button("+").on_hover_text("Add toolset to this file").clicked() {
+                    *action.borrow_mut() = Some(ListAction::NewToolset(Some(source.clone())));
+                }
+            });
         });
         
         // Toolsets in this file (indented)
@@ -141,14 +143,18 @@ fn render_toolsets(
                             gs.set_package(&pkg.name);
                         }
                     }
-                    // Edit button
-                    if ui.small_button("✏").on_hover_text("Edit").clicked() {
-                        *action.borrow_mut() = Some(ListAction::EditToolset(pkg.base.clone()));
-                    }
-                    // Delete toolset
-                    if ui.small_button("−").on_hover_text("Delete toolset").clicked() {
-                        *action.borrow_mut() = Some(ListAction::DeleteToolset(pkg.name.clone()));
-                    }
+                    
+                    // Right-aligned buttons
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // Delete toolset
+                        if ui.small_button("−").on_hover_text("Delete").clicked() {
+                            *action.borrow_mut() = Some(ListAction::DeleteToolset(pkg.name.clone()));
+                        }
+                        // Edit button
+                        if ui.small_button("e").on_hover_text("Edit").clicked() {
+                            *action.borrow_mut() = Some(ListAction::EditToolset(pkg.base.clone()));
+                        }
+                    });
                 });
             }
         });

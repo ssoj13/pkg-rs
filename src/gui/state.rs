@@ -3,6 +3,10 @@
 use serde::{Deserialize, Serialize};
 use super::node_graph::NodeGraphState;
 
+fn default_graph_depth() -> usize { 4 }
+fn default_h_spacing() -> f32 { 330.0 }
+fn default_v_spacing() -> f32 { 80.0 }
+
 /// Current view mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum ViewMode {
@@ -39,8 +43,15 @@ pub struct AppState {
     pub right_panel: RightPanel,
     /// Current selection.
     pub selection: Selection,
-    /// Graph depth slider value.
+    /// Graph depth slider value (default: 4).
+    #[serde(default = "default_graph_depth")]
     pub graph_depth: usize,
+    /// Horizontal spacing between depth levels.
+    #[serde(default = "default_h_spacing")]
+    pub graph_h_spacing: f32,
+    /// Vertical spacing between nodes.
+    #[serde(default = "default_v_spacing")]
+    pub graph_v_spacing: f32,
     /// Filter text for package list.
     pub filter: String,
     /// Show only toolsets in list.

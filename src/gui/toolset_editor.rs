@@ -36,13 +36,8 @@ pub struct ToolsetEditorState {
 }
 
 impl ToolsetEditorState {
-    /// Open editor for new toolset.
-    pub fn new_toolset(&mut self) {
-        self.new_toolset_in_file(None);
-    }
-    
-    /// Open editor for new toolset in specific file.
-    pub fn new_toolset_in_file(&mut self, target_file: Option<&str>) {
+    /// Open editor for new toolset, optionally targeting specific file.
+    pub fn new_toolset(&mut self, target_file: Option<&str>) {
         self.visible = true;
         self.is_edit = false;
         self.original_name.clear();
