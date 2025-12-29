@@ -236,13 +236,18 @@ impl Storage {
             .collect()
     }
 
-    /// Get scanned locations.
+    /// Get scanned locations (as strings for Python).
     #[getter]
     pub fn locations(&self) -> Vec<String> {
         self.locations
             .iter()
             .map(|p| p.to_string_lossy().to_string())
             .collect()
+    }
+
+    /// Get raw location paths (Rust only).
+    pub fn location_paths(&self) -> &[PathBuf] {
+        &self.locations
     }
 
     /// Find packages matching a pattern.
@@ -546,13 +551,16 @@ impl Storage {
 
         // Use Loader to execute package.py and get Package
         let mut loader = Loader::new(Some(false));
-        let pkg = loader.load_path(path).map_err(|e| {
+        let mut pkg = loader.load_path(path).map_err(|e| {
             debug!("Storage: failed to load {}: {}", path.display(), e);
             StorageError::InvalidPackage {
                 path: path.to_path_buf(),
                 reason: e.to_string(),
             }
         })?;
+
+        // Set source path
+        pkg.package_source = Some(path.to_string_lossy().to_string());
 
         // Update cache
         cache.insert(path.to_path_buf(), pkg.clone());

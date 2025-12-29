@@ -74,7 +74,12 @@ pub fn parse_toolsets_file(path: &Path) -> Result<HashMap<String, ToolsetDef>, S
 
 /// Convert ToolsetDef to Package.
 /// The toolset name becomes the package base name.
-pub fn toolset_to_package(name: &str, def: &ToolsetDef) -> Package {
+/// 
+/// # Arguments
+/// * `name` - Toolset name (becomes package base)
+/// * `def` - Toolset definition
+/// * `source_path` - Path to the source .toml file
+pub fn toolset_to_package(name: &str, def: &ToolsetDef, source_path: Option<&Path>) -> Package {
     let mut pkg = Package::new(name.to_string(), def.version.clone());
     
     // Add requirements
@@ -90,7 +95,12 @@ pub fn toolset_to_package(name: &str, def: &ToolsetDef) -> Package {
     // Add "toolset" tag to identify it
     pkg.add_tag("toolset".to_string());
     
-    trace!("Created toolset package: {} with {} reqs", pkg.name, pkg.reqs.len());
+    // Set source path
+    if let Some(p) = source_path {
+        pkg.package_source = Some(p.to_string_lossy().to_string());
+    }
+    
+    trace!("Created toolset package: {} with {} reqs from {:?}", pkg.name, pkg.reqs.len(), source_path);
     pkg
 }
 
@@ -128,7 +138,7 @@ pub fn scan_toolsets_dir(location: &Path) -> Vec<Package> {
         match parse_toolsets_file(&path) {
             Ok(toolsets) => {
                 for (name, def) in toolsets {
-                    let pkg = toolset_to_package(&name, &def);
+                    let pkg = toolset_to_package(&name, &def, Some(&path));
                     packages.push(pkg);
                 }
             }
@@ -299,7 +309,7 @@ tags = ["dcc", "fx"]
             tags: vec!["vfx".to_string()],
         };
         
-        let pkg = toolset_to_package("my-toolset", &def);
+        let pkg = toolset_to_package("my-toolset", &def, None);
         
         assert_eq!(pkg.name, "my-toolset-2.0.0");
         assert_eq!(pkg.base, "my-toolset");
@@ -307,6 +317,7 @@ tags = ["dcc", "fx"]
         assert_eq!(pkg.reqs.len(), 2);
         assert!(pkg.has_tag("toolset"));
         assert!(pkg.has_tag("vfx"));
+        assert!(pkg.package_source.is_none());
     }
 
     #[test]

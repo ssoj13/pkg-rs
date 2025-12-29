@@ -15,6 +15,8 @@ pub struct ToolsetEditorState {
     pub is_edit: bool,
     /// Original name (for edit mode).
     pub original_name: String,
+    /// Source file path (for edit/delete).
+    pub source_path: Option<String>,
     /// Toolset name.
     pub name: String,
     /// Version.
@@ -29,14 +31,22 @@ pub struct ToolsetEditorState {
     pub error: Option<String>,
     /// Success message.
     pub success: Option<String>,
+    /// Pending refresh (set when save/delete completes).
+    pub needs_refresh: bool,
 }
 
 impl ToolsetEditorState {
     /// Open editor for new toolset.
     pub fn new_toolset(&mut self) {
+        self.new_toolset_in_file(None);
+    }
+    
+    /// Open editor for new toolset in specific file.
+    pub fn new_toolset_in_file(&mut self, target_file: Option<&str>) {
         self.visible = true;
         self.is_edit = false;
         self.original_name.clear();
+        self.source_path = target_file.map(|s| s.to_string());
         self.name = "my-toolset".to_string();
         self.version = "1.0.0".to_string();
         self.description.clear();
@@ -44,14 +54,20 @@ impl ToolsetEditorState {
         self.tags.clear();
         self.error = None;
         self.success = None;
-        info!("[GUI] Opening new toolset editor");
+        info!("[GUI] Opening new toolset editor, target: {:?}", target_file);
     }
 
     /// Open editor to edit existing toolset.
-    pub fn edit_toolset(&mut self, name: &str, def: &ToolsetDef) {
+    /// 
+    /// # Arguments
+    /// * `name` - Toolset name
+    /// * `def` - Toolset definition
+    /// * `source_path` - Path to the source .toml file
+    pub fn edit_toolset(&mut self, name: &str, def: &ToolsetDef, source_path: Option<&str>) {
         self.visible = true;
         self.is_edit = true;
         self.original_name = name.to_string();
+        self.source_path = source_path.map(|s| s.to_string());
         self.name = name.to_string();
         self.version = def.version.clone();
         self.description = def.description.clone().unwrap_or_default();
@@ -59,7 +75,7 @@ impl ToolsetEditorState {
         self.tags = def.tags.join(", ");
         self.error = None;
         self.success = None;
-        info!("[GUI] Opening toolset editor for: {}", name);
+        info!("[GUI] Opening toolset editor for: {} from {:?}", name, source_path);
     }
 
     /// Build ToolsetDef from current state.
@@ -80,12 +96,16 @@ impl ToolsetEditorState {
 }
 
 /// Render the toolset editor window.
-pub fn render(ctx: &egui::Context, state: &mut ToolsetEditorState) -> Option<String> {
-    if !state.visible {
-        return None;
+pub fn render(ctx: &egui::Context, state: &mut ToolsetEditorState) -> bool {
+    // Check if refresh was requested
+    if state.needs_refresh {
+        state.needs_refresh = false;
+        return true;
     }
-
-    let mut created_toolset: Option<String> = None;
+    
+    if !state.visible {
+        return false;
+    }
 
     let title = if state.is_edit { "Edit Toolset" } else { "New Toolset" };
     
@@ -149,59 +169,40 @@ pub fn render(ctx: &egui::Context, state: &mut ToolsetEditorState) -> Option<Str
             ui.add_space(12.0);
             ui.separator();
 
-            // Buttons
+            // Buttons: [Cancel] [Save/Create] ... [Delete]
             ui.horizontal(|ui| {
                 if ui.button("Cancel").clicked() {
                     debug!("[GUI] Toolset editor cancelled");
                     state.visible = false;
                 }
 
-                if state.is_edit {
-                    // Delete button (only in edit mode)
-                    if ui.button(RichText::new("Delete").color(Color32::RED)).clicked() {
-                        if let Some(dir) = user_toolsets_dir() {
-                            let path = dir.join("user.toml");
-                            match delete_toolset(&path, &state.original_name) {
-                                Ok(deleted) => {
-                                    if deleted {
-                                        info!("[GUI] Deleted toolset: {}", state.original_name);
-                                        state.success = Some("Toolset deleted!".to_string());
-                                        state.visible = false;
-                                    } else {
-                                        state.error = Some("Toolset not found".to_string());
-                                    }
-                                }
-                                Err(e) => {
-                                    warn!("[GUI] Failed to delete toolset: {}", e);
-                                    state.error = Some(e);
-                                }
+                let btn_text = if state.is_edit { "Save" } else { "Create" };
+                if ui.button(btn_text).clicked() {
+                    // Validate
+                    if state.name.is_empty() {
+                        state.error = Some("Name is required".to_string());
+                    } else if state.version.is_empty() {
+                        state.error = Some("Version is required".to_string());
+                    } else {
+                        // Determine save path
+                        let save_path = if let Some(ref src) = state.source_path {
+                            // Use specified source path (edit mode or new in existing file)
+                            Some(std::path::PathBuf::from(src))
+                        } else {
+                            // New toolset without target: create {name}.toml in user dir
+                            user_toolsets_dir().map(|dir| dir.join(format!("{}.toml", state.name)))
+                        };
+                        
+                        if let Some(path) = save_path {
+                            // Ensure parent dir exists
+                            if let Some(parent) = path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
                             }
-                        }
-                    }
-                }
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let btn_text = if state.is_edit { "Save" } else { "Create" };
-                    if ui.button(btn_text).clicked() {
-                        // Validate
-                        if state.name.is_empty() {
-                            state.error = Some("Name is required".to_string());
-                            return;
-                        }
-                        if state.version.is_empty() {
-                            state.error = Some("Version is required".to_string());
-                            return;
-                        }
-
-                        // Save
-                        if let Some(dir) = user_toolsets_dir() {
-                            let path = dir.join("user.toml");
                             let def = state.to_def();
-                            
                             match save_toolset(&path, &state.name, &def) {
                                 Ok(_) => {
-                                    info!("[GUI] Saved toolset: {}", state.name);
-                                    created_toolset = Some(state.name.clone());
+                                    info!("[GUI] Saved toolset: {} to {:?}", state.name, path);
+                                    state.needs_refresh = true;
                                     state.visible = false;
                                 }
                                 Err(e) => {
@@ -210,12 +211,37 @@ pub fn render(ctx: &egui::Context, state: &mut ToolsetEditorState) -> Option<Str
                                 }
                             }
                         } else {
-                            state.error = Some("Cannot determine user toolsets directory".to_string());
+                            state.error = Some("Cannot determine save path".to_string());
                         }
                     }
-                });
+                }
+
+                // Delete button on the right (edit mode only)
+                if state.is_edit {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button(RichText::new("Delete").color(Color32::RED)).clicked() {
+                            if let Some(ref source) = state.source_path {
+                                let path = std::path::Path::new(source);
+                                match delete_toolset(path, &state.original_name) {
+                                    Ok(true) => {
+                                        info!("[GUI] Deleted toolset: {} from {:?}", state.original_name, path);
+                                        state.needs_refresh = true;
+                                        state.visible = false;
+                                    }
+                                    Ok(false) => state.error = Some("Toolset not found".to_string()),
+                                    Err(e) => {
+                                        warn!("[GUI] Failed to delete: {}", e);
+                                        state.error = Some(e);
+                                    }
+                                }
+                            } else {
+                                state.error = Some("No source path for this toolset".to_string());
+                            }
+                        }
+                    });
+                }
             });
         });
 
-    created_toolset
+    false
 }

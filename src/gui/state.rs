@@ -24,6 +24,8 @@ pub enum RightPanel {
 pub struct Selection {
     /// Selected package name (full name like "maya-2026.1.0").
     pub package: Option<String>,
+    /// Selected source file (for toolsets view).
+    pub source_file: Option<String>,
     /// Expanded tree nodes (for tree view persistence).
     pub expanded: Vec<String>,
 }

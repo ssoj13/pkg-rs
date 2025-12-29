@@ -234,6 +234,12 @@ pub struct Package {
     #[pyo3(get)]
     #[serde(default)]
     pub solve_error: Option<String>,
+
+    /// Path to the source file (package.py or .toml for toolsets).
+    /// Set by loader/storage during package discovery.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_source: Option<String>,
 }
 
 #[pymethods]
@@ -264,6 +270,7 @@ impl Package {
             icon: None,
             solve_status: SolveStatus::NotSolved,
             solve_error: None,
+            package_source: None,
         }
     }
 

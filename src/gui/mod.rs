@@ -58,6 +58,96 @@ impl PkgApp {
             Box::new(|cc| Ok(Box::new(PkgApp::new(cc, storage)))),
         )
     }
+    
+    /// Handle actions from package list.
+    fn handle_list_action(&mut self, action: package_list::ListAction) {
+        use package_list::ListAction;
+        
+        match action {
+            ListAction::EditToolset(base_name) => {
+                // Find package and create ToolsetDef from it
+                if let Some(pkg) = self.storage.latest(&base_name) {
+                    let def = toolset::ToolsetDef {
+                        version: pkg.version.clone(),
+                        description: None,
+                        requires: pkg.reqs.clone(),
+                        tags: pkg.tags.iter()
+                            .filter(|t| *t != "toolset")
+                            .cloned()
+                            .collect(),
+                    };
+                    self.toolset_editor.edit_toolset(
+                        &base_name,
+                        &def,
+                        pkg.package_source.as_deref(),
+                    );
+                }
+            }
+            ListAction::NewToolset(target_file) => {
+                // Create new toolset, optionally targeting specific file
+                self.toolset_editor.new_toolset_in_file(target_file.as_deref());
+            }
+            ListAction::DeleteToolset(pkg_name) => {
+                // Find package and use its source path
+                if let Some(pkg) = self.storage.get(&pkg_name) {
+                    if let Some(ref source) = pkg.package_source {
+                        let path = std::path::Path::new(source);
+                        if let Ok(true) = toolset::delete_toolset(path, &pkg.base) {
+                            self.refresh_storage();
+                            self.state.selection.package = None;
+                        }
+                    }
+                }
+            }
+            ListAction::NewFile => {
+                // Open file dialog to create new .toml
+                self.create_new_toolset_file();
+            }
+            ListAction::DeleteFile(file_path) => {
+                // Delete entire .toml file
+                let path = std::path::Path::new(&file_path);
+                if path.exists() {
+                    if let Ok(()) = std::fs::remove_file(path) {
+                        self.refresh_storage();
+                        self.state.selection.source_file = None;
+                        self.state.selection.package = None;
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Refresh storage from disk.
+    fn refresh_storage(&mut self) {
+        if let Ok(new_storage) = Storage::scan_impl(Some(self.storage.location_paths())) {
+            self.storage = new_storage;
+        }
+    }
+    
+    /// Create new .toml file for toolsets.
+    fn create_new_toolset_file(&mut self) {
+        // Get user toolsets directory
+        if let Some(dir) = toolset::user_toolsets_dir() {
+            // Ensure directory exists
+            let _ = std::fs::create_dir_all(&dir);
+            
+            // Open save dialog
+            let dir_clone = dir.clone();
+            std::thread::spawn(move || {
+                let file = rfd::FileDialog::new()
+                    .set_title("Create Toolset File")
+                    .set_directory(&dir_clone)
+                    .set_file_name("new-toolsets.toml")
+                    .add_filter("TOML", &["toml"])
+                    .save_file();
+                
+                if let Some(path) = file {
+                    // Create empty file
+                    let _ = std::fs::write(&path, "# Toolsets\n");
+                }
+            });
+        }
+    }
 }
 
 impl eframe::App for PkgApp {
@@ -74,13 +164,6 @@ impl eframe::App for PkgApp {
                 ui.separator();
                 ui.selectable_value(&mut self.state.right_panel, state::RightPanel::Tree, "Tree");
                 ui.selectable_value(&mut self.state.right_panel, state::RightPanel::Graph, "Graph");
-                
-                // New Toolset button (right side)
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("+ New Toolset").clicked() {
-                        self.toolset_editor.new_toolset();
-                    }
-                });
             });
         });
 
@@ -90,19 +173,7 @@ impl eframe::App for PkgApp {
             .resizable(true)
             .show(ctx, |ui| {
                 if let Some(action) = package_list::render(ui, &mut self.state, &self.storage) {
-                    match action {
-                        package_list::ListAction::EditToolset(name) => {
-                            // Load toolset def and open editor
-                            if let Some(dir) = toolset::user_toolsets_dir() {
-                                let path = dir.join("user.toml");
-                                if let Ok(defs) = toolset::parse_toolsets_file(&path) {
-                                    if let Some(def) = defs.get(&name) {
-                                        self.toolset_editor.edit_toolset(&name, def);
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    self.handle_list_action(action);
                 }
             });
 
@@ -126,9 +197,11 @@ impl eframe::App for PkgApp {
         actions::render_solve_window(ctx, &mut self.solve_result);
         
         // Toolset editor window
-        if let Some(_name) = toolset_editor::render(ctx, &mut self.toolset_editor) {
-            // Reload storage to pick up new toolset
-            // TODO: Proper refresh mechanism
+        if toolset_editor::render(ctx, &mut self.toolset_editor) {
+            // Reload storage to pick up new/edited toolset
+            if let Ok(new_storage) = Storage::scan_impl(Some(self.storage.location_paths())) {
+                self.storage = new_storage;
+            }
         }
     }
 }

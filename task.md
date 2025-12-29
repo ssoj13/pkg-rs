@@ -138,4 +138,3 @@ pkg -ug
 - [ ] Drag & drop reordering in toolset editor
 - [ ] Launch confirmation dialog
 - [ ] Process management (running apps list)
-- [ ] Storage refresh after toolset changes
