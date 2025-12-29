@@ -41,9 +41,13 @@ pub struct Cli {
     #[arg(short = 'x', long = "exclude", global = true)]
     pub exclude: Vec<String>,
 
-    /// Include user packages (~\packages)
+    /// Include user packages (~/.pkg-rs/packages)
     #[arg(short = 'u', long = "user-packages", global = true, default_value = "false")]
     pub user_packages: bool,
+
+    /// Launch GUI (requires --features gui)
+    #[arg(short = 'g', long = "gui", global = true, default_value = "false")]
+    pub gui: bool,
 
     #[command(subcommand)]
     pub command: Option<Commands>,

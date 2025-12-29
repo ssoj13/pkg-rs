@@ -100,14 +100,42 @@ src/
 
 ## Implementation Order
 
-1. [ ] Add export methods to Env (to_cmd, to_ps1, to_sh, to_py)
-2. [ ] Add ~/.pkg-rs/packages to Storage.default_locations()
-3. [ ] Add save_toolset() to toolset.rs
-4. [ ] Create gui/ module structure
-5. [ ] Implement PkgApp with basic eframe setup
-6. [ ] Package list panel (left)
-7. [ ] Tree editor (right, default view)
-8. [ ] Node graph view with depth slider
-9. [ ] Toolset editor with +/drag/drop
-10. [ ] Actions: Solve, Launch, Export
-11. [ ] Add -g/--gui flag to CLI
+1. [x] Add export methods to Env (to_cmd, to_ps1, to_sh, to_py)
+2. [x] Add ~/.pkg-rs/packages to Storage with -u/--user flag
+3. [x] Add save_toolset() to toolset.rs
+4. [x] Create gui/ module structure
+5. [x] Implement PkgApp with basic eframe setup
+6. [x] Package list panel (left)
+7. [x] Tree editor (right, default view)
+8. [x] Node graph view with depth slider (basic text version)
+9. [x] Actions: Solve, Launch, Export (UI ready)
+10. [x] Add -g/--gui flag to CLI
+
+## Usage
+
+```bash
+# Build with GUI
+cargo build --features gui
+
+# Run GUI
+pkg -g
+pkg --gui
+
+# With user packages
+pkg -ug
+```
+
+## Completed Improvements
+
+- [x] Full egui-snarl node graph with visual nodes (depth slider, color by tags)
+- [x] Toolset editor with create/edit/delete via modal dialog
+- [x] Save/Load dialogs for Export (rfd crate)
+- [x] Solve with 3-column result display (packages, apps, merged env)
+- [x] Launch with resolved environment from dependencies
+
+## TODO (future improvements)
+
+- [ ] Drag & drop reordering in toolset editor
+- [ ] Launch confirmation dialog
+- [ ] Process management (running apps list)
+- [ ] Storage refresh after toolset changes

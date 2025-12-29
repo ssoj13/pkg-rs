@@ -142,6 +142,120 @@ pub fn scan_toolsets_dir(location: &Path) -> Vec<Package> {
     packages
 }
 
+/// Save a toolset definition to a TOML file.
+///
+/// If the file exists, updates/adds the toolset section.
+/// If the file doesn't exist, creates it with just this toolset.
+///
+/// # Arguments
+/// * `path` - Path to .toml file
+/// * `name` - Toolset name (becomes TOML section)
+/// * `def` - Toolset definition
+///
+/// # Example
+/// ```ignore
+/// let def = ToolsetDef {
+///     version: "1.0.0".to_string(),
+///     description: Some("Maya with Redshift".to_string()),
+///     requires: vec!["maya@2026".to_string(), "redshift@>=3.5".to_string()],
+///     tags: vec!["dcc".to_string()],
+/// };
+/// save_toolset(Path::new("studio.toml"), "maya-full", &def)?;
+/// ```
+pub fn save_toolset(path: &Path, name: &str, def: &ToolsetDef) -> Result<(), String> {
+    use std::fs;
+    use toml_edit::{DocumentMut, Item, Array, value};
+
+    debug!("Saving toolset '{}' to {:?}", name, path);
+
+    // Load existing file or create empty document
+    let mut doc: DocumentMut = if path.exists() {
+        let content = fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read {:?}: {}", path, e))?;
+        content.parse::<DocumentMut>()
+            .map_err(|e| format!("Failed to parse {:?}: {}", path, e))?
+    } else {
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create directory {:?}: {}", parent, e))?;
+        }
+        DocumentMut::new()
+    };
+
+    // Create or update the toolset section
+    let table = doc[name].or_insert(toml_edit::table());
+    if let Item::Table(t) = table {
+        t.insert("version", value(&def.version));
+        
+        if let Some(desc) = &def.description {
+            t.insert("description", value(desc));
+        } else {
+            t.remove("description");
+        }
+
+        // Requires array
+        let mut reqs = Array::new();
+        for r in &def.requires {
+            reqs.push(r.as_str());
+        }
+        t.insert("requires", value(reqs));
+
+        // Tags array (only if non-empty)
+        if !def.tags.is_empty() {
+            let mut tags = Array::new();
+            for tag in &def.tags {
+                tags.push(tag.as_str());
+            }
+            t.insert("tags", value(tags));
+        } else {
+            t.remove("tags");
+        }
+    }
+
+    // Write back
+    fs::write(path, doc.to_string())
+        .map_err(|e| format!("Failed to write {:?}: {}", path, e))?;
+
+    debug!("Saved toolset '{}' to {:?}", name, path);
+    Ok(())
+}
+
+/// Delete a toolset from a TOML file.
+///
+/// Removes the section with the given name.
+/// Returns Ok(true) if deleted, Ok(false) if not found.
+pub fn delete_toolset(path: &Path, name: &str) -> Result<bool, String> {
+    use std::fs;
+    use toml_edit::DocumentMut;
+
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    let content = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {:?}: {}", path, e))?;
+    let mut doc: DocumentMut = content.parse()
+        .map_err(|e| format!("Failed to parse {:?}: {}", path, e))?;
+
+    if doc.contains_key(name) {
+        doc.remove(name);
+        fs::write(path, doc.to_string())
+            .map_err(|e| format!("Failed to write {:?}: {}", path, e))?;
+        debug!("Deleted toolset '{}' from {:?}", name, path);
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+/// Get default user toolsets directory.
+///
+/// Returns ~/.pkg-rs/packages/.toolsets/
+pub fn user_toolsets_dir() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|h| h.join(".pkg-rs").join("packages").join(".toolsets"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,5 +332,71 @@ requires = ["houdini@21"]
         assert_eq!(packages.len(), 2);
         assert!(packages.iter().any(|p| p.base == "maya-full"));
         assert!(packages.iter().any(|p| p.base == "houdini-full"));
+    }
+
+    #[test]
+    fn test_save_toolset() {
+        let temp = TempDir::new().unwrap();
+        let toml_path = temp.path().join("test.toml");
+
+        // Save new toolset
+        let def = ToolsetDef {
+            version: "1.0.0".to_string(),
+            description: Some("Test toolset".to_string()),
+            requires: vec!["maya@2026".to_string(), "redshift@>=3.5".to_string()],
+            tags: vec!["dcc".to_string()],
+        };
+        save_toolset(&toml_path, "my-toolset", &def).unwrap();
+
+        // Verify file exists and can be parsed
+        let content = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(content.contains("[my-toolset]"));
+        assert!(content.contains("version = \"1.0.0\""));
+        assert!(content.contains("maya@2026"));
+
+        // Add another toolset to same file
+        let def2 = ToolsetDef {
+            version: "2.0.0".to_string(),
+            description: None,
+            requires: vec!["houdini@21".to_string()],
+            tags: vec![],
+        };
+        save_toolset(&toml_path, "houdini-env", &def2).unwrap();
+
+        // Parse and verify both exist
+        let toolsets = parse_toolsets_file(&toml_path).unwrap();
+        assert_eq!(toolsets.len(), 2);
+        assert!(toolsets.contains_key("my-toolset"));
+        assert!(toolsets.contains_key("houdini-env"));
+    }
+
+    #[test]
+    fn test_delete_toolset() {
+        let temp = TempDir::new().unwrap();
+        let toml_path = temp.path().join("test.toml");
+
+        // Create file with two toolsets
+        let def = ToolsetDef {
+            version: "1.0.0".to_string(),
+            description: None,
+            requires: vec!["maya@2026".to_string()],
+            tags: vec![],
+        };
+        save_toolset(&toml_path, "toolset-a", &def).unwrap();
+        save_toolset(&toml_path, "toolset-b", &def).unwrap();
+
+        // Delete one
+        let deleted = delete_toolset(&toml_path, "toolset-a").unwrap();
+        assert!(deleted);
+
+        // Verify only one remains
+        let toolsets = parse_toolsets_file(&toml_path).unwrap();
+        assert_eq!(toolsets.len(), 1);
+        assert!(!toolsets.contains_key("toolset-a"));
+        assert!(toolsets.contains_key("toolset-b"));
+
+        // Delete non-existent
+        let deleted = delete_toolset(&toml_path, "not-exists").unwrap();
+        assert!(!deleted);
     }
 }

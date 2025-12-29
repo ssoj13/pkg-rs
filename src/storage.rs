@@ -636,9 +636,20 @@ impl Storage {
         }
     }
     
-    /// Get user packages directory.
+    /// Get user packages directory (~/.pkg-rs/packages).
+    ///
+    /// This directory is used for user-specific packages and toolsets.
+    /// Add with `-u` / `--user-packages` flag.
+    ///
+    /// Structure:
+    /// ```text
+    /// ~/.pkg-rs/
+    ///   packages/           # user package overrides
+    ///     .toolsets/        # user toolsets
+    ///       my-env.toml
+    /// ```
     pub fn user_packages_dir() -> Option<std::path::PathBuf> {
-        dirs::home_dir().map(|h| h.join("packages"))
+        dirs::home_dir().map(|h| h.join(".pkg-rs").join("packages"))
     }
 }
 

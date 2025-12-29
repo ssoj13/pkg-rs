@@ -322,6 +322,65 @@ impl Env {
         Ok(env)
     }
 
+    /// Export as Windows CMD script.
+    ///
+    /// Generates `SET VAR=value` lines for cmd.exe.
+    /// Use with: `env.to_cmd() > setup.cmd`
+    pub fn to_cmd(&self) -> String {
+        self.evars
+            .iter()
+            .map(|e| format!("SET {}={}", e.name, e.value))
+            .collect::<Vec<_>>()
+            .join("\r\n")
+    }
+
+    /// Export as PowerShell script.
+    ///
+    /// Generates `$env:VAR = "value"` lines.
+    /// Use with: `env.to_ps1() > setup.ps1`
+    pub fn to_ps1(&self) -> String {
+        self.evars
+            .iter()
+            .map(|e| {
+                // Escape double quotes in value
+                let escaped = e.value.replace('"', "`\"");
+                format!("$env:{} = \"{}\"", e.name, escaped)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Export as Bash/sh script.
+    ///
+    /// Generates `export VAR="value"` lines.
+    /// Use with: `env.to_sh() > setup.sh`
+    pub fn to_sh(&self) -> String {
+        self.evars
+            .iter()
+            .map(|e| {
+                // Escape double quotes and backslashes
+                let escaped = e.value.replace('\\', "\\\\").replace('"', "\\\"");
+                format!("export {}=\"{}\"", e.name, escaped)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Export as Python script.
+    ///
+    /// Generates `os.environ['VAR'] = 'value'` lines.
+    /// Includes `import os` at the top.
+    /// Use with: `env.to_py() > setup.py`
+    pub fn to_py(&self) -> String {
+        let mut lines = vec!["import os".to_string(), "".to_string()];
+        for e in &self.evars {
+            // Escape single quotes
+            let escaped = e.value.replace('\\', "\\\\").replace('\'', "\\'");
+            lines.push(format!("os.environ['{}'] = '{}'", e.name, escaped));
+        }
+        lines.join("\n")
+    }
+
     /// Serialize to JSON string.
     pub fn to_json(&self) -> PyResult<String> {
         use crate::error::IntoPyErr;
@@ -580,5 +639,51 @@ mod tests {
         let env2: Env = serde_json::from_str(&json).unwrap();
 
         assert_eq!(env, env2);
+    }
+
+    #[test]
+    fn env_to_cmd() {
+        let mut env = Env::new("test".to_string());
+        env.add(Evar::set("PATH", "C:\\bin"));
+        env.add(Evar::set("ROOT", "C:\\opt"));
+
+        let cmd = env.to_cmd();
+        assert!(cmd.contains("SET PATH=C:\\bin"));
+        assert!(cmd.contains("SET ROOT=C:\\opt"));
+        assert!(cmd.contains("\r\n")); // CRLF for Windows
+    }
+
+    #[test]
+    fn env_to_ps1() {
+        let mut env = Env::new("test".to_string());
+        env.add(Evar::set("PATH", "/bin"));
+        env.add(Evar::set("MSG", "hello \"world\""));
+
+        let ps1 = env.to_ps1();
+        assert!(ps1.contains("$env:PATH = \"/bin\""));
+        assert!(ps1.contains("`\""));  // escaped quote
+    }
+
+    #[test]
+    fn env_to_sh() {
+        let mut env = Env::new("test".to_string());
+        env.add(Evar::set("PATH", "/bin"));
+        env.add(Evar::set("MSG", "hello \"world\""));
+
+        let sh = env.to_sh();
+        assert!(sh.contains("export PATH=\"/bin\""));
+        assert!(sh.contains("\\\"")); // escaped quote
+    }
+
+    #[test]
+    fn env_to_py() {
+        let mut env = Env::new("test".to_string());
+        env.add(Evar::set("PATH", "/bin"));
+        env.add(Evar::set("MSG", "it's fine"));
+
+        let py = env.to_py();
+        assert!(py.starts_with("import os"));
+        assert!(py.contains("os.environ['PATH'] = '/bin'"));
+        assert!(py.contains("\\'"));  // escaped single quote
     }
 }
