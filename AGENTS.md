@@ -582,7 +582,160 @@ pkg_lib (lib.rs)
 
 ---
 
+## GUI Architecture (src/gui/)
+
+The GUI is built with `eframe/egui` (immediate mode GUI) and `egui-snarl` for node graph visualization.
+
+### Module Structure
+
+| File | Purpose |
+|------|--------|
+| `mod.rs` | Main App struct, panel layout, event handling |
+| `state.rs` | AppState - persistent UI state (selection, filters, sliders) |
+| `package_list.rs` | Left panel - package/toolset list with filtering |
+| `tree_editor.rs` | Middle panel - package details tree view |
+| `actions.rs` | Bottom panel - Solve, Export buttons, solve result display |
+| `toolset_editor.rs` | Modal dialog for creating/editing toolsets |
+| `node_graph.rs` | Dependency graph visualization using egui-snarl |
+| `node_layout.rs` | **Sugiyama-style hierarchical layout algorithm** |
+
+### Node Graph & Layout System
+
+```mermaid
+graph LR
+    NG[node_graph.rs] --> NL[node_layout.rs]
+    NG --> SNARL[egui-snarl]
+    
+    subgraph "Layout Algorithm"
+        NL --> BC[Barycenter Ordering]
+        NL --> PA[PIN-aware Positions]
+        NL --> AL[Alignment Phase]
+    end
+    
+    subgraph "Visualization"
+        SNARL --> NODES[PackageNode]
+        SNARL --> WIRES[Connections]
+    end
+```
+
+### Node Layout Algorithm (node_layout.rs)
+
+**Problem**: Visualize dependency DAGs with minimal edge crossings and horizontal connections.
+
+**Solution**: Modified Sugiyama algorithm with PIN-aware barycenter.
+
+#### Why PIN-aware Barycenter?
+
+Standard barycenter calculates node position as average of neighbor positions.
+But when ROOT has 10 input pins (requirements), all connected nodes get the
+same barycenter (ROOT's center) and end up sorted alphabetically → edge crossings!
+
+**Our fix**: Track which INPUT PIN each edge connects to. Use pin's Y position
+(not node center) for barycenter calculation.
+
+```
+Standard:  barycenter = avg(neighbor_center_y)
+PIN-aware: barycenter = avg(neighbor_y + pin_index/total_pins * height)
+```
+
+#### Algorithm Phases
+
+```
+Phase 1: CROSSING MINIMIZATION (30 iterations)
+├── Forward sweep (layer 1 → N)
+│   └── Sort nodes by barycenter of upper neighbors
+└── Backward sweep (layer N → 1)
+    └── Sort nodes by barycenter of lower neighbors
+
+Phase 2: COORDINATE ASSIGNMENT (30 iterations)  
+├── Forward: align nodes with upper neighbor pin positions
+└── Backward: align nodes with lower neighbor pin positions
+    └── Use median, respect spacing, 30% dampening
+
+Phase 3: FINAL POSITIONING
+├── Center graph vertically (Y=400)
+└── X = (max_layer - node.layer) * h_spacing + 100
+```
+
+#### Key Data Structures
+
+```rust
+// Adjacency with pin fractions
+adj_upper: HashMap<NodeId, Vec<(NeighborId, pin_frac)>>
+adj_lower: HashMap<NodeId, Vec<(NeighborId, pin_frac)>>
+
+// pin_frac = pin_index / total_input_pins
+// 0.0 = top pin, 1.0 = bottom pin
+```
+
+#### Configuration (UI Sliders)
+
+| Slider | Range | Default | Controls |
+|--------|-------|---------|----------|
+| Depth | 0-10 | 4 | Max dependency depth to show |
+| H | 150-500 | 330 | Horizontal spacing between layers |
+| V | 10-100 | 30 | Vertical spacing between nodes |
+
+### Solve Result Display (actions.rs)
+
+After clicking "Solve", displays 3 resizable columns:
+
+```
+┌─────────────┬─────────────┬─────────────────────┐
+│  Packages   │    Apps     │    Environment      │
+│  (resolved) │  (▶ launch) │  (collapsible vars) │
+└─────────────┴─────────────┴─────────────────────┘
+```
+
+- **Packages**: Numbered list of resolved dependencies
+- **Apps**: Launch buttons for all apps in resolved packages
+- **Environment**: Merged env vars with Expand/Collapse buttons
+
+### Tree Editor (tree_editor.rs)
+
+Displays package structure as collapsible tree:
+- `envs` → Env → Evars (name=value table)
+- `apps` → App (with ▶ Launch button)
+- `reqs` → requirements (editable for toolsets)
+- `tags` → tags (editable for toolsets)
+
+**Edit mode for toolsets**: 
+- Click "Edit" on reqs section
+- Add/remove requirements with +/- buttons
+- Edit tags as comma-separated string
+- Apply saves to source .toml file
+
+### Toolset Editor Dialog (toolset_editor.rs)
+
+Modal for creating/editing toolsets:
+- Name, Version, Description, Tags fields
+- Requirements multiline editor
+- Save to `.toolsets/*.toml` files
+- Delete button in edit mode
+
+### State Persistence (state.rs)
+
+AppState saved to `prefs.json`:
+- `graph_depth`, `graph_h_spacing`, `graph_v_spacing`
+- `last_toolset_dir` - remembers last +File directory
+- `solve_col1`, `solve_col2` - column widths
+- Selection state (package, source_file)
+
+---
+
 ## Changelog
+
+- **2025-12-28**: GUI improvements and node layout algorithm
+  - **Node Layout**: Rewrote with PIN-aware barycenter algorithm
+    - Nodes now ordered to match pin positions on neighbors
+    - Connections are horizontal instead of crossing
+    - V slider (10-100) controls vertical spacing
+  - **+File button**: Remembers last directory (persistent)
+  - **Expand/Collapse**: Fixed for Environment section
+  - **Export buttons**: Now work with toolsets (use solved env)
+  - **Tree editor**: Editable reqs/tags for toolsets with Apply/Cancel
+  - **Stable sorting**: Prevents UI flickering in lists
+  - **Comprehensive comments**: Added to node_layout.rs
 
 - **2025-12-27**: Initial AGENTS.md created
   - Full architecture documentation
