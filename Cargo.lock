@@ -2445,6 +2445,7 @@ dependencies = [
  "log",
  "pubgrub",
  "pyo3",
+ "pyo3-build-config",
  "regex",
  "rfd",
  "rustyline",
