@@ -30,25 +30,6 @@ fn main() -> ExitCode {
     info!("pkg v{} starting", pkg_lib::VERSION);
     trace!("CLI args: repos={:?}, exclude={:?}", cli.repos, cli.exclude);
 
-    // Launch GUI if requested
-    if cli.gui {
-        debug!("Launching GUI");
-        let storage = match build_storage(&cli.repos, &cli.exclude, cli.user_packages) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                return ExitCode::FAILURE;
-            }
-        };
-        return match pkg_lib::gui::PkgApp::run(storage) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("GUI error: {}", e);
-                ExitCode::FAILURE
-            }
-        };
-    }
-
     // Show help if no command
     let Some(command) = cli.command else {
         print_usage();
@@ -197,6 +178,16 @@ fn main() -> ExitCode {
         Commands::Shell => {
             debug!("cmd: shell");
             shell::cmd_shell(storage)
+        }
+        Commands::Gui => {
+            debug!("cmd: gui");
+            match pkg_lib::gui::PkgApp::run(storage) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("GUI error: {}", e);
+                    ExitCode::FAILURE
+                }
+            }
         }
         Commands::Python { .. } => unreachable!(),
         Commands::Completions { .. } => unreachable!(),

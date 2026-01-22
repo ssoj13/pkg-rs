@@ -45,10 +45,6 @@ pub struct Cli {
     #[arg(short = 'u', long = "user-packages", global = true, default_value = "false")]
     pub user_packages: bool,
 
-    /// Launch GUI
-    #[arg(short = 'g', long = "gui", global = true, default_value = "false")]
-    pub gui: bool,
-
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -200,4 +196,8 @@ pub enum Commands {
         /// Shell type
         shell: CompletionShell,
     },
+
+    /// Launch graphical interface
+    #[command(name = "gui")]
+    Gui,
 }
