@@ -1,0 +1,14 @@
+[alias]
+xtask = "run --package xtask --"
+
+[target.aarch64-apple-darwin]
+rustflags = [
+    "-C", "link-arg=-F/Users/alex.khalyavin/projects/brew/opt/python@3.14/Frameworks",
+    "-C", "link-arg=-framework", "-C", "link-arg=Python",
+]
+
+[target.x86_64-apple-darwin]
+rustflags = [
+    "-C", "link-arg=-F/Users/alex.khalyavin/projects/brew/opt/python@3.14/Frameworks",
+    "-C", "link-arg=-framework", "-C", "link-arg=Python",
+]

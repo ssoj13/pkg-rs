@@ -30,9 +30,12 @@ pub struct PkgApp {
 
 impl PkgApp {
     /// Create new app with storage.
-    pub fn new(_cc: &eframe::CreationContext<'_>, storage: Storage) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, storage: Storage) -> Self {
         // Load state from ~/.pkg/prefs.json
         let state = AppState::load();
+
+        // Use dark mode by default
+        cc.egui_ctx.set_visuals(egui::Visuals::dark());
 
         Self {
             state,
@@ -197,6 +200,9 @@ impl eframe::App for PkgApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Force dark mode (override system theme detection)
+        ctx.set_visuals(egui::Visuals::dark());
+        
         // Exit on Escape
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);

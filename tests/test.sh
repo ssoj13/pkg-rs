@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env zsh
 # test.sh - Package manager test script
 # Usage: ./test.sh [command]
 # Commands: gen, basic, conflict
@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PKG="$ROOT/target/release/pkg"
 TEST_DIR="$(dirname "$0")"
 REPO="$TEST_DIR/repo"
-REPO_BAD="$TEST_DIR/repo_bad"
+REPO_BAD="$TEST_DIR/repo"
 
 # Check if pkg exists
 if [ ! -f "$PKG" ]; then
