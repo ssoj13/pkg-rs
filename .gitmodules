@@ -1,0 +1,9 @@
+[submodule "_ref/rez"]
+	path = _ref/rez
+	url = git@github.com:AcademySoftwareFoundation/rez.git
+[submodule "_ref/rez-next"]
+	path = _ref/rez-next
+	url = git@github.com:loonghao/rez-next.git
+[submodule "_ref/bleeding-rez"]
+	path = _ref/bleeding-rez
+	url = git@github.com:mottosso/bleeding-rez.git
