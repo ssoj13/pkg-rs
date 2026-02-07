@@ -27,27 +27,60 @@ pkg env maya -- "C:\Program Files\Autodesk\Maya2024\bin\maya.exe"
 Why this flow: you first tell the scanner where packages live, then verify
 the data (`list`/`info`), then build an environment and run the software.
 
+## Configuration (pkg-rs.toml)
+
+pkg can load a TOML config file. Search order:
+
+1. `--cfg <path>` (full override, error if missing)
+2. `PKG_RS_CONFIG` env var
+3. `pkg-rs.toml` next to the `pkg` binary
+4. `~/.pkg-rs/pkg-rs.toml`
+
+If none of these exist, pkg will create a default config at
+`~/.pkg-rs/pkg-rs.toml`.
+
+Example:
+
+```toml
+[repos]
+paths = ["D:/packages", "D:/tools"]
+local_path = "D:/packages-local"
+release_path = "//server/packages"
+user_packages = true
+scan_depth = 4
+```
+
+Fields:
+
+- `paths` - repo roots to scan (ordered)
+- `local_path` - install target for `pkg build --process local`
+- `release_path` - install target for `pkg build --process central`
+- `user_packages` - include `~/.pkg-rs/packages`
+- `scan_depth` - max directory depth when scanning for `package.py`
+
 ## Locations and Repositories
 
-pkg scans for `package.py` under repositories. There are three ways to define
+pkg scans for `package.py` under repositories. There are four ways to define
 where to scan (in priority order):
 
-1) `--repo` flags:
+1. `--repo` flags:
 
 ```powershell
 pkg -r D:\packages -r \\server\repo list
 ```
 
-2) `PKG_LOCATIONS` env var (split by `;` on Windows, `:` on Linux):
+2. `pkg-rs.toml` `[repos].paths` (if present and `--repo` is not used)
+
+3. `PKG_LOCATIONS` env var (split by `;` on Windows, `:` on Linux):
 
 ```powershell
 $env:PKG_LOCATIONS="D:\packages;D:\tools"
 ```
 
-3) Fallback: a `repo` folder in the current directory (if it exists).
+4. Fallback: a `repo` folder in the current directory (if it exists).
 
-You can also add a personal repo with `--user-packages`, which maps to
-`~/packages`:
+You can also add a personal repo with `--user-packages` (or config
+`user_packages = true`), which maps to `~/.pkg-rs/packages`:
 
 ```powershell
 pkg --user-packages list
@@ -120,6 +153,37 @@ pkg env maya -f set     # set NAME=value
 pkg env maya -f json    # JSON
 ```
 
+## Build Packages
+
+`pkg build` runs a build pipeline for the `package.py` in the current directory.
+It detects the build system from the source tree or uses `--build-system`.
+
+Supported build systems: `custom`, `make`, `cmake`, `cargo`, `python`.
+
+Typical usage:
+
+```powershell
+pkg build --install
+pkg build --install --process central
+pkg build --build-system cargo --install
+pkg build --build-args "--release"
+```
+
+Inputs:
+- `package.py` (build metadata, variants, build_command)
+- Source tree in the same directory
+- CLI flags (`--build-args`, `--variants`, `--process`)
+
+Outputs:
+- Build directory (default `./build`)
+- `build.rxt` and `variant.json`
+- Installed package layout when `--install` is used
+
+Install targets use config when available:
+- `repos.local_path` for `--process local`
+- `repos.release_path` for `--process central`
+- fallback to `--prefix` or other scan roots
+
 ## Dependency Graph
 
 ```powershell
@@ -187,8 +251,11 @@ Why use it: stress‑test scanning/solving or demo the tool without real DCCs.
 
 ## Writing `package.py`
 
-There is no `pkg gen-pkg` command in the current CLI. Create `package.py`
-manually using this minimal template.
+Use `pkg gen-pkg` to create a template, or create `package.py` manually.
+
+```powershell
+pkg gen-pkg mytool-1.0.0
+```
 
 Directory layout:
 

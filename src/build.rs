@@ -5,10 +5,11 @@
 //! the resulting package to a repository layout. This module follows Rez
 //! semantics for variants and build environment variables.
 
-use crate::build_command::BuildCommand;
 use crate::dep::DepSpec;
 use crate::error::BuildError;
 use crate::{Env, Evar, Package, Storage};
+mod systems;
+use systems::{BuildContext, BuildPhase, BuildSystemArgs, BuildSystemRegistry};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
 use serde::Serialize;
@@ -21,7 +22,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Options for running a package build.
 #[derive(Debug, Clone)]
 pub struct BuildOptions {
-    /// Override build system (custom/make/cmake).
+    /// Override build system (custom/make/cmake/cargo/python).
     pub build_system: Option<String>,
     /// Arguments passed to the selected build system.
     pub build_args: Vec<String>,
@@ -180,7 +181,13 @@ pub fn build_package(
         None
     };
 
-    let build_system = resolve_build_system(package, source_dir, options.build_system.as_deref())?;
+    let registry = BuildSystemRegistry::new();
+    let build_system = resolve_build_system(
+        package,
+        source_dir,
+        options.build_system.as_deref(),
+        &registry,
+    )?;
 
     let parse_result = parse_build_args(source_dir, &options.extra_args)?;
     let mut merged_build_args = options.build_args.clone();
@@ -283,39 +290,31 @@ pub fn build_package(
             run_env.insert(key.clone(), value.clone());
         }
 
-        match build_system.as_str() {
-            "custom" => run_custom_build(
-                package,
-                source_dir,
-                &variant,
-                &variant_build_path,
-                variant_install_path.as_ref(),
-                &run_env,
-                &merged_build_args,
-                options.install,
-            )?,
-            "make" => run_make_build(
-                source_dir,
-                &variant_build_path,
-                &run_env,
-                &merged_build_args,
-                variant_install_path.as_ref(),
-                options.install,
-            )?,
-            "cmake" => run_cmake_build(
-                source_dir,
-                &variant_build_path,
-                &run_env,
-                &merged_build_args,
-                &options.child_build_args,
-                variant_install_path.as_ref(),
-            )?,
-            other => {
-                return Err(BuildError::Config(format!(
-                    "unknown build system: {}",
-                    other
-                )))
-            }
+        let ctx = BuildContext {
+            package,
+            source_dir,
+            build_dir: &variant_build_path,
+            install_dir: variant_install_path.as_ref(),
+            env: &run_env,
+            variant_index: variant.index,
+            install: options.install,
+        };
+        let args = BuildSystemArgs {
+            build_args: &merged_build_args,
+            child_build_args: &options.child_build_args,
+        };
+        build_system.before_phase(BuildPhase::Configure, &ctx, &args)?;
+        build_system.configure(&ctx, &args)?;
+        build_system.after_phase(BuildPhase::Configure, &ctx, &args)?;
+
+        build_system.before_phase(BuildPhase::Build, &ctx, &args)?;
+        build_system.build(&ctx, &args)?;
+        build_system.after_phase(BuildPhase::Build, &ctx, &args)?;
+
+        if options.install && build_system.supports_install() {
+            build_system.before_phase(BuildPhase::Install, &ctx, &args)?;
+            build_system.install(&ctx, &args)?;
+            build_system.after_phase(BuildPhase::Install, &ctx, &args)?;
         }
 
         if let Some(path) = &package_install_root {
@@ -471,10 +470,19 @@ fn resolve_install_path(
     package: &Package,
     build_type: BuildType,
 ) -> Result<PathBuf, BuildError> {
+    let config = crate::config::get().ok();
+    let config_paths = config
+        .as_ref()
+        .map(|cfg| crate::config::repo_scan_paths(cfg))
+        .unwrap_or_default();
     let repo_root = if let Some(prefix) = prefix {
         prefix.clone()
     } else if build_type == BuildType::Central {
-        if let Ok(path) = std::env::var("PKG_RELEASE_PATH") {
+        if let Some(cfg) = config.as_ref().and_then(|c| c.repos.release_path.as_ref()) {
+            cfg.clone()
+        } else if let Some(first) = config_paths.first() {
+            first.clone()
+        } else if let Ok(path) = std::env::var("PKG_RELEASE_PATH") {
             PathBuf::from(path)
         } else if let Some(first) = storage.location_paths().first() {
             first.clone()
@@ -485,6 +493,10 @@ fn resolve_install_path(
                 "no repository path available; use --prefix".to_string(),
             ));
         }
+    } else if let Some(cfg) = config.as_ref().and_then(|c| c.repos.local_path.as_ref()) {
+        cfg.clone()
+    } else if let Some(first) = config_paths.first() {
+        first.clone()
     } else if let Ok(path) = std::env::var("PKG_LOCAL_PATH") {
         PathBuf::from(path)
     } else if let Some(user_dir) = Storage::user_packages_dir() {
@@ -498,47 +510,32 @@ fn resolve_install_path(
     Ok(repo_root.join(&package.base).join(&package.version))
 }
 
-fn resolve_build_system(
+fn resolve_build_system<'a>(
     package: &Package,
     source_dir: &Path,
     override_name: Option<&str>,
-) -> Result<String, BuildError> {
+    registry: &'a BuildSystemRegistry,
+) -> Result<&'a dyn systems::BuildSystem, BuildError> {
     if let Some(name) = override_name {
-        return Ok(match name {
-            "custom" | "make" | "cmake" => name.to_string(),
-            _ => {
-                return Err(BuildError::Config(format!(
-                    "unsupported build system: {}",
-                    name
-                )))
-            }
-        });
+        return registry
+            .by_name(name)
+            .ok_or_else(|| BuildError::Config(format!("unsupported build system: {}", name)));
     }
 
-    if let Some(cmd) = &package.build_command {
-        if !cmd.is_disabled() {
-            return Ok("custom".to_string());
-        }
-        return Ok("custom".to_string());
+    if package.build_command.is_some() {
+        return registry.by_name("custom").ok_or_else(|| {
+            BuildError::Config("custom build system is not registered".to_string())
+        });
     }
 
     if let Some(name) = package.build_system.as_deref() {
-        return Ok(match name {
-            "custom" | "make" | "cmake" => name.to_string(),
-            _ => {
-                return Err(BuildError::Config(format!(
-                    "unsupported build system: {}",
-                    name
-                )))
-            }
-        });
+        return registry
+            .by_name(name)
+            .ok_or_else(|| BuildError::Config(format!("unsupported build system: {}", name)));
     }
 
-    if source_dir.join("CMakeLists.txt").exists() {
-        return Ok("cmake".to_string());
-    }
-    if source_dir.join("Makefile").exists() {
-        return Ok("make".to_string());
+    if let Some(system) = registry.detect(source_dir) {
+        return Ok(system);
     }
 
     Err(BuildError::Config(
@@ -1088,178 +1085,6 @@ fn write_build_env_forwarder(
             perms.set_mode(0o755);
             std::fs::set_permissions(path, perms)?;
         }
-    }
-
-    Ok(())
-}
-
-fn run_custom_build(
-    package: &Package,
-    source_dir: &Path,
-    variant: &BuildVariant,
-    build_root: &Path,
-    install_path: Option<&PathBuf>,
-    env: &HashMap<String, String>,
-    build_args: &[String],
-    install: bool,
-) -> Result<(), BuildError> {
-    let Some(build_command) = &package.build_command else {
-        return Err(BuildError::Config(
-            "custom build requires build_command".to_string(),
-        ));
-    };
-
-    if build_command.is_disabled() {
-        return Ok(());
-    }
-
-    let root_abs = source_dir
-        .canonicalize()
-        .unwrap_or_else(|_| source_dir.to_path_buf());
-    let build_abs = build_root
-        .canonicalize()
-        .unwrap_or_else(|_| build_root.to_path_buf());
-    let install_abs = install_path.map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()));
-
-    let variant_index = variant.index.map(|v| v.to_string()).unwrap_or_default();
-    let install_flag = if install { "install" } else { "" };
-
-    let expand = |text: &str| -> String {
-        text.replace("{root}", &root_abs.display().to_string())
-            .replace("{install}", install_flag)
-            .replace("{build_path}", &build_abs.display().to_string())
-            .replace(
-                "{install_path}",
-                &install_abs
-                    .as_ref()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default(),
-            )
-            .replace("{name}", &package.base)
-            .replace("{variant_index}", &variant_index)
-            .replace("{version}", &package.version)
-            .trim()
-            .to_string()
-    };
-
-    match build_command {
-        BuildCommand::String(cmd) => {
-            let mut full_cmd = cmd.clone();
-            if !build_args.is_empty() {
-                let quoted = build_args.iter().map(|a| shell_quote(a)).collect::<Vec<_>>();
-                full_cmd.push(' ');
-                full_cmd.push_str(&quoted.join(" "));
-            }
-            let command = expand(&full_cmd);
-            run_shell_command(&command, build_root, env)
-        }
-        BuildCommand::List(list) => {
-            let mut args = list.clone();
-            args.extend(build_args.iter().cloned());
-            let mut expanded = args.iter().map(|s| expand(s)).collect::<Vec<_>>();
-            if expanded.is_empty() {
-                return Err(BuildError::Config("empty build_command list".to_string()));
-            }
-            let program = expanded.remove(0);
-            run_command(&program, &expanded, build_root, env)
-        }
-        BuildCommand::Disabled(value) => Err(BuildError::Config(format!(
-            "invalid build_command boolean: {}",
-            value
-        ))),
-    }
-}
-
-fn run_make_build(
-    source_dir: &Path,
-    build_root: &Path,
-    env: &HashMap<String, String>,
-    build_args: &[String],
-    install_path: Option<&PathBuf>,
-    install: bool,
-) -> Result<(), BuildError> {
-    let make_dir = if build_root.join("Makefile").exists() {
-        build_root
-    } else {
-        source_dir
-    };
-
-    let mut args: Vec<String> = Vec::new();
-    args.extend(build_args.iter().cloned());
-
-    if !args.iter().any(|a| a.starts_with("-j")) {
-        let thread_count = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1);
-        args.insert(0, format!("-j{}", thread_count));
-    }
-
-    if let Some(prefix) = install_path {
-        if !args.iter().any(|a| a.starts_with("DESTDIR=")) {
-            args.push(format!("DESTDIR={}", prefix.display()));
-        }
-    }
-
-    run_command("make", &args, make_dir, env)?;
-
-    if install {
-        run_command("make", &["install".to_string()], make_dir, env)?;
-    }
-
-    Ok(())
-}
-
-fn run_cmake_build(
-    source_dir: &Path,
-    build_root: &Path,
-    env: &HashMap<String, String>,
-    build_args: &[String],
-    child_build_args: &[String],
-    install_path: Option<&PathBuf>,
-) -> Result<(), BuildError> {
-    let abs_path = |path: &Path| -> PathBuf {
-        if path.is_absolute() {
-            path.to_path_buf()
-        } else if let Ok(cwd) = std::env::current_dir() {
-            cwd.join(path)
-        } else {
-            path.to_path_buf()
-        }
-    };
-
-    let source_dir_abs = abs_path(source_dir);
-    let build_root_abs = abs_path(build_root);
-
-    let mut configure_args = vec![
-        "-S".to_string(),
-        source_dir_abs.display().to_string(),
-        "-B".to_string(),
-        build_root_abs.display().to_string(),
-    ];
-    configure_args.extend(build_args.iter().cloned());
-    if let Some(prefix) = install_path {
-        configure_args.push(format!("-DCMAKE_INSTALL_PREFIX={}", prefix.display()));
-    }
-
-    run_command("cmake", &configure_args, &build_root_abs, env)?;
-
-    let mut build_cmd_args = vec!["--build".to_string(), build_root_abs.display().to_string()];
-    let thread_count = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1);
-    build_cmd_args.push("--parallel".to_string());
-    build_cmd_args.push(thread_count.to_string());
-
-    if !child_build_args.is_empty() {
-        build_cmd_args.push("--".to_string());
-        build_cmd_args.extend(child_build_args.iter().cloned());
-    }
-
-    run_command("cmake", &build_cmd_args, &build_root_abs, env)?;
-
-    if install_path.is_some() {
-        let install_args = vec!["--install".to_string(), build_root_abs.display().to_string()];
-        run_command("cmake", &install_args, &build_root_abs, env)?;
     }
 
     Ok(())

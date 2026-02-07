@@ -10,7 +10,8 @@ The core library for pkg-rs. It defines package metadata, dependency solving, en
 - Provides build and pip import utilities for creating installable package repositories.
 
 ## Current Status
-- Build pipeline supports `custom`, `make`, and `cmake`, with Rez-style `build_command` and `pre_build_commands` handling.
-- Variants and hashed variants are supported, with `build.rxt` and `variant.json` emitted per variant.
-- Pip import mirrors rez-pip layout: `pip install --target`, dist-info metadata parsing, entry-point wrappers, and hashed variants.
-- Gaps vs Rez remain in pip conversion (full PEP440 coverage, rezified pip context) and some Rez-only features (central build process, variant shortlinks).
+- Build pipeline supports `custom`, `make`, `cmake`, `cargo`, and `python`, with Rez-style `build_command` and `pre_build_commands` handling plus configure/build/install phases.
+- Variants and hashed variants are supported, with `build.rxt` and `variant.json` emitted per variant and metadata copied on install.
+- Pip import mirrors rez-pip layout: `pip install --target`, dist-info metadata parsing, entry-point wrappers, hashed variants, and dependency bundling when multiple dist-info are present.
+- Repo configuration is available via `pkg-rs.toml` (scan paths, build install targets, optional scan depth, user packages).
+- Gaps vs Rez remain in pip conversion edge cases (full PEP440 coverage, rezified pip context) and some Rez-only features (release hooks, suite context integration).

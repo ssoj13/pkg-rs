@@ -1557,10 +1557,29 @@ fn resolve_repo_root(
         return Ok(prefix.clone());
     }
 
+    let config = crate::config::get().ok();
+    let config_paths = config
+        .as_ref()
+        .map(|cfg| crate::config::repo_scan_paths(cfg))
+        .unwrap_or_default();
+
     if release {
+        if let Some(cfg) = config.as_ref().and_then(|c| c.repos.release_path.as_ref()) {
+            return Ok(cfg.clone());
+        }
+        if let Some(first) = config_paths.first() {
+            return Ok(first.clone());
+        }
         if let Some(first) = storage.location_paths().first() {
             return Ok(first.clone());
         }
+    }
+
+    if let Some(cfg) = config.as_ref().and_then(|c| c.repos.local_path.as_ref()) {
+        return Ok(cfg.clone());
+    }
+    if let Some(first) = config_paths.first() {
+        return Ok(first.clone());
     }
 
     if let Some(user_dir) = Storage::user_packages_dir() {

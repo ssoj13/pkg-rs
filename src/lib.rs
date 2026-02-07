@@ -125,6 +125,7 @@
 //! - `python` (default) - Enable Python bindings via PyO3
 
 pub mod app;
+pub mod config;
 pub mod build;
 pub mod build_command;
 pub mod cache;

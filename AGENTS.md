@@ -381,6 +381,99 @@ sequenceDiagram
 
 ---
 
+## Rez Parity Dataflow (ASCII)
+
+```
+Rez Config Layering
+  |
+  v
+rezconfig.py defaults
+  |
+  v
+REZ_CONFIG_FILE (list)
+  |
+  v
+~/.rezconfig (unless disabled)
+  |
+  v
+REZ_* env overrides
+  |
+  v
+REZ_*_JSON overrides
+  |
+  v
+package.py config section (build/release only)
+  |
+  v
+Resolved Config
+```
+
+```
+Rez Resolve -> Context
+  |
+  v
+Package Requests + Filters + Orderers + Timestamp
+  |
+  v
+Solver (Rez algorithm)
+  |
+  v
+Resolved Packages + Variants
+  |
+  v
+ResolvedContext (.rxt)
+  |
+  v
+Shell Env / Command Execution / Suite
+```
+
+```
+Rez Build Pipeline
+  |
+  v
+Developer Package + Build Args
+  |
+  v
+BuildSystem Detection (plugin)
+  |
+  v
+BuildProcess (local/central)
+  |
+  v
+Resolve Build Context (build_requires + private_build_requires)
+  |
+  v
+Set REZ_BUILD_* env vars + pre_build_commands
+  |
+  v
+BuildSystem configure/build/install
+  |
+  v
+Install payload + build.rxt + build-env scripts
+```
+
+```
+Rez Pip Pipeline
+  |
+  v
+Find rezified python/pip
+  |
+  v
+pip install --target (temp)
+  |
+  v
+Parse dist-info + RECORD + entry points
+  |
+  v
+Convert PEP440 -> Rez requirements
+  |
+  v
+Copy payload into repo layout
+  |
+  v
+Write package.py + metadata
+```
+
 ## Codepath Documentation
 
 ### Storage::scan_impl() - Main Entry Point

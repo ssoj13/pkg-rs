@@ -1,130 +1,85 @@
-# Rez Parity Audit Report (pkg-rs: build + pip)
+# Rez Parity Audit Report (Full Stack)
 
 Date: 2026-02-07
 
 ## Scope
-- Compared pkg-rs build/pip pipelines against Rez reference implementation.
-- Focused on functional parity for `rez-build` and `rez-pip` equivalents.
-- Evidence is from local source files in `D:/_pkg-rs` and `D:/_pkg-rs/_ref/rez`.
+- Full Rez parity assessment for CLI, config, package format, repository backends, resolver/context, build, pip, shells, caching.
+- Evidence is from local source files in `D:/_pkg-rs` and reference Rez in `D:/_pkg-rs/_ref/rez`.
 
 ## Evidence Sources (local)
-- pkg-rs build: `D:/_pkg-rs/src/build.rs`
-- pkg-rs pip: `D:/_pkg-rs/src/pip.rs`
-- pkg-rs loader: `D:/_pkg-rs/src/loader.rs`
-- pkg-rs build command type: `D:/_pkg-rs/src/build_command.rs`
-- pkg-rs CLI build/pip: `D:/_pkg-rs/src/pkg/cli.rs`
-- Rez build system: `D:/_pkg-rs/_ref/rez/src/rez/build_system.py`
-- Rez custom build system: `D:/_pkg-rs/_ref/rez/src/rezplugins/build_system/custom.py`
-- Rez CLI build: `D:/_pkg-rs/_ref/rez/src/rez/cli/build.py`
-- Rez variant subpaths: `D:/_pkg-rs/_ref/rez/src/rez/package_resources.py`
-- Rez pip: `D:/_pkg-rs/_ref/rez/src/rez/pip.py`
-- Rez pip utils: `D:/_pkg-rs/_ref/rez/src/rez/utils/pip.py`
+- Rez CLI entry points: `D:/_pkg-rs/_ref/rez/src/rez/cli/_entry_points.py:65-316`
+- Rez config precedence: `D:/_pkg-rs/_ref/rez/src/rez/rezconfig.py:5-35`
+- Rez package schema: `D:/_pkg-rs/_ref/rez/src/rez/package_serialise.py:18-110`
+- Rez build system/process: `D:/_pkg-rs/_ref/rez/src/rez/build_system.py:13-205`, `D:/_pkg-rs/_ref/rez/src/rez/build_process.py:26-167`
+- Rez pip behavior: `D:/_pkg-rs/_ref/rez/src/rez/pip.py:34-220`
+- Rez resolved context: `D:/_pkg-rs/_ref/rez/src/rez/resolved_context.py:55-200`
+- Rez repository plugins: `D:/_pkg-rs/_ref/rez/src/rez/package_repository.py:16-220`
+- pkg-rs CLI commands: `D:/_pkg-rs/src/pkg/cli.rs:56-260`, `D:/_pkg-rs/src/pkg/commands/mod.rs:3-23`
+- pkg-rs config loader: `D:/_pkg-rs/src/config.rs:68-177`
+- pkg-rs package model: `D:/_pkg-rs/src/package.rs:161-259`
+- pkg-rs storage scan: `D:/_pkg-rs/src/storage.rs:9-205`
+- pkg-rs solver: `D:/_pkg-rs/src/solver/mod.rs:1-215`
+- pkg-rs build pipeline: `D:/_pkg-rs/src/build.rs:22-260`
+- pkg-rs pip pipeline: `D:/_pkg-rs/src/pip.rs:3-233`
 
 ## TODO/FIXME Scan Summary
-- pkg-rs: no TODO/FIXME/HACK markers detected in `D:/_pkg-rs` (excluding `_ref`).
+- pkg-rs: no TODO/FIXME/HACK markers detected outside `_ref`.
 
-## Implemented Parity (since last report)
-- Variants + hashed variants in build pipeline.
-- build_command accepts `False | str | list` with placeholder expansion.
-- pre_build_commands extraction and execution, with env mutations applied to build env.
-- REZ_BUILD_* variables are set, with absolute build/source paths.
-- rez-pip baseline: pip>=19 check, `--use-pep517` default, RECORD-based copy, hashed variants.
+## Findings (Gaps vs Rez)
 
-## Findings (Remaining Gaps)
-
-### 1) build.rxt + build scripts are not Rez-compatible
+### 1) CLI parity is missing many Rez commands
 - Severity: High
-- Evidence:
-  - pkg-rs writes a custom JSON snapshot: `D:/_pkg-rs/src/build.rs:640-658`.
-  - pkg-rs emits `build_env.*` scripts (not Rez `build-env`): `D:/_pkg-rs/src/build.rs:676-699`.
-  - Rez custom build uses a `build-env` forwarding script and loads `build.rxt` as a ResolvedContext: `D:/_pkg-rs/_ref/rez/src/rezplugins/build_system/custom.py:110-126`, `D:/_pkg-rs/_ref/rez/src/rezplugins/build_system/custom.py:231-235`.
-- Impact:
-  - Rez tooling (or any Rez-compatible build shell workflow) cannot consume pkg-rs build artifacts.
-  - `pkg build --scripts` does not match Rez behavior.
-- Recommended fix:
-  - Implement a Rez-compatible `build.rxt` (ResolvedContext JSON schema) and generate a `build-env` forwarding script.
+- Evidence: Rez exposes 30+ CLI entry points including `rez-env`, `rez-build`, `rez-pip`, `rez-suite`, `rez-context`, `rez-bind`, `rez-pkg-cache`, `rez-yaml2py`, `rez-bundle`, `rez-benchmark`, `rez-pkg-ignore`, `rez-mv`, `rez-rm` in `D:/_pkg-rs/_ref/rez/src/rez/cli/_entry_points.py:65-316`. pkg-rs defines only a subset of commands in `D:/_pkg-rs/src/pkg/cli.rs:56-260` and `D:/_pkg-rs/src/pkg/commands/mod.rs:3-23`.
+- Impact: Users cannot achieve Rez-equivalent workflows in pkg-rs CLI.
+- Recommendation: Add all Rez commands and alias behavior with consistent flags and outputs.
 
-### 2) Build process selection and release flags are missing
-- Severity: Medium
-- Evidence:
-  - pkg-rs always sets `REZ_BUILD_TYPE=local`: `D:/_pkg-rs/src/build.rs:594`.
-  - pkg-rs CLI has no `--process` option: `D:/_pkg-rs/src/pkg/cli.rs:117-148`.
-  - Rez exposes `--process` and uses `config.default_build_process`: `D:/_pkg-rs/_ref/rez/src/rez/cli/build.py:36-40`.
-  - Rez sets `REZ_IN_REZ_RELEASE` for central builds: `D:/_pkg-rs/_ref/rez/src/rez/build_system.py:250-253`.
-- Impact:
-  - No central/release build parity; environment flags differ from Rez.
-- Recommended fix:
-  - Add build process abstraction (local/central) and CLI parity, set `REZ_BUILD_TYPE` and `REZ_IN_REZ_RELEASE` accordingly.
-
-### 3) pre_build_commands execution context is partial
-- Severity: Medium
-- Evidence:
-  - pkg-rs binds a SimpleNamespace with limited fields: `D:/_pkg-rs/src/build.rs:966-1096`.
-  - Rez binds a VariantBinding + RO_AttrDictWrapper for build context: `D:/_pkg-rs/_ref/rez/src/rez/build_system.py:260-294`.
-- Impact:
-  - Packages relying on full variant bindings or rex-style behavior can break.
-- Recommended fix:
-  - Implement a VariantBinding equivalent (or extend `this`/`build` bindings) and align env semantics to Rez.
-
-### 4) parse_build_args.py and __PARSE_ARG_* exports are missing
-- Severity: Medium
-- Evidence:
-  - Rez custom build exports args from `parse_build_args.py`: `D:/_pkg-rs/_ref/rez/src/rezplugins/build_system/custom.py:176-204`.
-  - pkg-rs has no equivalent path in build execution (no exports in `build.rs`).
-- Impact:
-  - Custom build scripts that expect Rez-style `__PARSE_ARG_*` variables will fail.
-- Recommended fix:
-  - Load `parse_build_args.py` in build dir and export `__PARSE_ARG_*` into the build env.
-
-### 5) Hashed variant shortlinks are not supported
-- Severity: Low-Medium
-- Evidence:
-  - Rez supports `_v` shortlinks for hashed variants: `D:/_pkg-rs/_ref/rez/src/rez/package_resources.py:470-483`.
-  - pkg-rs always uses the hash subpath directly: `D:/_pkg-rs/src/build.rs:302-319`.
-- Impact:
-  - No shortlink compatibility with Rez repositories that rely on `_v`.
-- Recommended fix:
-  - Implement optional shortlink creation/resolution with a config flag.
-
-### 6) Pip interpreter discovery and dependency mode differ from Rez
-- Severity: Medium
-- Evidence:
-  - pkg-rs finds python only on PATH: `D:/_pkg-rs/src/pip.rs:161-193`.
-  - Rez searches rezified python/pip first and has min_deps/no_deps modes: `D:/_pkg-rs/_ref/rez/src/rez/pip.py:40-119`.
-- Impact:
-  - Wrong interpreter selection and dependency installation behavior vs Rez.
-- Recommended fix:
-  - Resolve python/pip via Storage/Solver and implement min_deps behavior.
-
-### 7) Pip requirement conversion is simplified vs Rez PEP440 conversion
+### 2) Config precedence and overrides are incomplete
 - Severity: High
-- Evidence:
-  - pkg-rs ignores `!=` and `===`, uses simplified semver conversion: `D:/_pkg-rs/src/pip.rs:750-776`.
-  - Rez implements full PEP440 conversion with range unions: `D:/_pkg-rs/_ref/rez/src/rez/utils/pip.py:146-239`.
-- Impact:
-  - Dependency constraints are inaccurate; resolution diverges from Rez.
-- Recommended fix:
-  - Port Rez PEP440 conversion logic to Rust (including `!=` unions and wildcard rules).
+- Evidence: Rez config layering includes config files list, home config, env overrides, JSON env overrides, and package config section override for build/release (`D:/_pkg-rs/_ref/rez/src/rez/rezconfig.py:8-26`). pkg-rs currently supports only `--cfg`, `PKG_RS_CONFIG`, binary directory `pkg-rs.toml`, and `~/.pkg-rs/pkg-rs.toml`, and writes a default config if missing (`D:/_pkg-rs/src/config.rs:68-177`).
+- Impact: Parity-breaking config behavior, especially for env overrides and build/release overrides.
+- Recommendation: Implement Rez-style precedence using TOML and add env override rules.
 
-### 8) Pip file mapping/remap behavior is incomplete
-- Severity: Medium
-- Evidence:
-  - pkg-rs maps RECORD entries only to `python/` or `bin/`: `D:/_pkg-rs/src/pip.rs:622-645`.
-  - Rez uses distlib + remap rules for installed files: `D:/_pkg-rs/_ref/rez/src/rez/pip.py:317-365`.
-- Impact:
-  - Incorrect payload layout and missing tools in some packages.
-- Recommended fix:
-  - Implement distlib-like RECORD mapping with configurable remaps.
+### 3) Package schema parity is partial
+- Severity: High
+- Evidence: Rez schema includes `tools`, `commands`, `pre_commands`, `post_commands`, `pre_test_commands`, `tests`, `help`, `config`, `timestamp`, `release_message`, and `changelog` (`D:/_pkg-rs/_ref/rez/src/rez/package_serialise.py:18-110`). pkg-rs `Package` lacks most of these fields (`D:/_pkg-rs/src/package.rs:161-259`).
+- Impact: Package definitions cannot be ported without loss and runtime behavior diverges.
+- Recommendation: Extend pkg-rs package model and loader to include missing Rez fields.
 
-### 9) Pip metadata attributes not preserved
+### 4) Repository backend plugin system is missing
+- Severity: High
+- Evidence: Rez defines repository plugins and a repository interface (`D:/_pkg-rs/_ref/rez/src/rez/package_repository.py:16-220`). pkg-rs uses a single filesystem scanning `Storage` implementation (`D:/_pkg-rs/src/storage.rs:9-205`).
+- Impact: No parity for memory repositories, repository-specific payload rules, or plugin-based discovery.
+- Recommendation: Introduce repository trait + plugin registry and backends.
+
+### 5) Resolver/context features are missing or simplified
+- Severity: High
+- Evidence: Rez `ResolvedContext` supports package filters, orderers, timestamps, patch locks, suite visibility, and context serialization (`D:/_pkg-rs/_ref/rez/src/rez/resolved_context.py:55-200`). pkg-rs `Solver` is a direct PubGrub resolver without these layers (`D:/_pkg-rs/src/solver/mod.rs:1-215`).
+- Impact: Resulting environments differ from Rez in resolution behavior and serialization.
+- Recommendation: Add a resolver layer above PubGrub and support Rez-compatible context logic and `.rxt` serialization.
+
+### 6) Build parity gaps beyond current pipeline
+- Severity: High
+- Evidence: Rez has plugin-based build systems and build processes with local/central flows (`D:/_pkg-rs/_ref/rez/src/rez/build_system.py:13-205`, `D:/_pkg-rs/_ref/rez/src/rez/build_process.py:26-167`). pkg-rs uses a single build pipeline without plugins (`D:/_pkg-rs/src/build.rs:22-260`).
+- Impact: Missing build process parity and extensibility.
+- Recommendation: Add build system plugin trait, build process abstraction, and build.rxt/build-env script parity.
+
+### 7) Pip parity gaps remain
+- Severity: High
+- Evidence: Rez pip discovers rezified python/pip and enforces pip>=19 with min_deps/no_deps behavior (`D:/_pkg-rs/_ref/rez/src/rez/pip.py:34-220`). pkg-rs pip uses local python discovery and a simplified requirements conversion (`D:/_pkg-rs/src/pip.rs:3-233`).
+- Impact: Dependency resolution and payload layout differ from Rez pip.
+- Recommendation: Port Rez pip discovery order, PEP440 conversion, and RECORD remap behavior.
+
+### 8) Shell plugins and env output parity is missing
 - Severity: Medium
-- Evidence:
-  - pkg-rs writes only tags/description/env/apps: `D:/_pkg-rs/src/pip.rs:979-1030`.
-  - Rez adds `pip_name`, `from_pip`, `is_pure_python`, `help`, `authors`, `tools`: `D:/_pkg-rs/_ref/rez/src/rez/pip.py:403-458`.
-- Impact:
-  - Missing provenance metadata and UI/UX info for pip packages.
-- Recommended fix:
-  - Extend Package schema or add custom attributes to persist pip metadata.
+- Evidence: Rez uses shell plugins for command and env output (`D:/_pkg-rs/_ref/rez/src/rez/resolved_context.py:126-135`). pkg-rs currently emits env output in a simplified format via CLI (`D:/_pkg-rs/src/pkg/cli.rs:93-119`).
+- Impact: Shell-specific behavior and scripting differs from Rez.
+- Recommendation: Implement shell plugin system and per-shell output parity.
+
+### 9) Caching/memcache parity is missing
+- Severity: Medium
+- Evidence: Rez supports resolve caching, package file caching, listdir caching, and memcached settings (`D:/_pkg-rs/_ref/rez/src/rez/rezconfig.py:141-183`). pkg-rs has no equivalent cache configuration in config schema (`D:/_pkg-rs/src/config.rs:29-202`).
+- Impact: Performance and behavioral differences under load.
+- Recommendation: Add cache configuration and memcache integration.
 
 ## Recommendation
-Proceed with the parity-focused implementation plan in `plan2.md` and treat findings 1, 2, 6, and 7 as P0 blockers for Rez-equivalent behavior.
+Proceed with the parity implementation plan in `D:/_pkg-rs/plan3.md` and track completion in `D:/_pkg-rs/TODO.md`.

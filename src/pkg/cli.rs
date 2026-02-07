@@ -33,6 +33,10 @@ pub struct Cli {
     #[arg(short = 'l', long = "log", global = true)]
     pub log_file: Option<Option<PathBuf>>,
 
+    /// Config file override (TOML)
+    #[arg(long = "cfg", global = true)]
+    pub cfg: Option<PathBuf>,
+
     /// Package repositories (can be specified multiple times)
     #[arg(short = 'r', long = "repo", global = true)]
     pub repos: Vec<PathBuf>,
@@ -125,7 +129,7 @@ pub enum Commands {
         /// Install to a custom package repository path
         #[arg(short = 'p', long)]
         prefix: Option<PathBuf>,
-        /// Build system to use (custom, make, cmake)
+        /// Build system to use (custom, make, cmake, cargo, python)
         #[arg(short = 'b', long = "build-system")]
         build_system: Option<String>,
         /// Build process to use (local, central)

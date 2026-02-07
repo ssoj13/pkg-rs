@@ -314,6 +314,14 @@ pub enum PipError {
 /// These occur during package discovery and loading.
 #[derive(Error, Debug)]
 pub enum StorageError {
+    /// Configuration error
+    #[error("config error for {}: {reason}", path.display())]
+    Config {
+        /// Config path
+        path: PathBuf,
+        /// Error reason
+        reason: String,
+    },
     /// Invalid path (doesn't exist or not accessible)
     #[error("invalid path: {}", path.display())]
     InvalidPath {

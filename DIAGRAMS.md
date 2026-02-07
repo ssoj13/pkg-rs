@@ -1,53 +1,69 @@
-# ASCII Diagrams
+# Mermaid Diagrams
 
-## Build Pipeline (ASCII)
+## Config Precedence
 
-```
-package.py + source tree + CLI flags + repos
-  |
-  v
-Load Package -> Collect Variants -> Select Variant(s)
-  |
-  v
-Resolve Build Context -> Set REZ_BUILD_* env vars
-  |
-  v
-Execute pre_build_commands (env mutations)
-  |
-  v
-Run Build System (custom/make/cmake) or emit build scripts
-  |
-  +--> build.rxt snapshot + variant.json
-  |
-  v
-Install payload + package.py + variant metadata (optional)
+```mermaid
+flowchart TD
+    A[Defaults] --> B[Config files list]
+    B --> C[Home config]
+    C --> D[Env overrides: PKG_*]
+    D --> E[Env overrides: PKG_*_JSON]
+    E --> F[Package config section (build/release)]
+    F --> G[Effective Config]
 ```
 
-## Pip Import Pipeline (ASCII)
+## CLI Command Routing
 
-```
-package spec + CLI flags + repos
-  |
-  v
-Find Python/Pip -> pip install --target (temp)
-  |
-  v
-Parse dist-info metadata -> Build rez requirements + variants
-  |
-  v
-Copy payload into repo layout (hashed variant subpath)
-  |
-  v
-Generate entry points -> Write package.py
+```mermaid
+flowchart LR
+    CLI[pkg CLI] --> CMD[Command Dispatcher]
+    CMD --> ENV[pkg env]
+    CMD --> BUILD[pkg build]
+    CMD --> PIP[pkg pip]
+    CMD --> LIST[pkg list/info/scan]
+    CMD --> CTX[pkg context/suite/status]
+
+    ENV --> RESOLVE[Resolver]
+    RESOLVE --> CTXOBJ[ResolvedContext]
+
+    BUILD --> BUILDPIPE[Build Pipeline]
+    PIP --> PIPPIPE[Pip Import]
+    LIST --> STORAGE[Storage Scan]
 ```
 
-## Variant Layout (ASCII)
+## Resolve + Context Pipeline
 
+```mermaid
+flowchart TD
+    REQ[Package Requests] --> FILTERS[Filters + Orderers + Timestamp]
+    FILTERS --> SOLVER[Resolver/Solver]
+    SOLVER --> CTX[ResolvedContext]
+    CTX --> SHELL[Shell Env Output]
+    CTX --> RXT[.rxt Serialization]
+    CTX --> EXEC[Command Execution]
 ```
-Package Root
-  |
-  v
-hashed_variants?
-  |-- yes --> SHA1 of python list repr -> hashed subpath
-  |-- no  --> Join variant requirements -> readable subpath
+
+## Build Pipeline
+
+```mermaid
+flowchart TD
+    PKG[Developer Package] --> DETECT[BuildSystem Detection]
+    DETECT --> PROC[BuildProcess (local/central)]
+    PROC --> BCTX[Resolve Build Context]
+    BCTX --> ENVVARS[Set REZ_BUILD_* + pre_build_commands]
+    ENVVARS --> PHASES[Configure/Build/Install]
+    PHASES --> INSTALL[Install Payload + Metadata]
+    PHASES --> SCRIPTS[build-env + build.rxt]
+```
+
+## Pip Pipeline
+
+```mermaid
+flowchart TD
+    SPEC[Pip Spec] --> FINDPY[Find rezified python/pip]
+    FINDPY --> PIPINSTALL[pip install --target]
+    PIPINSTALL --> META[dist-info + RECORD + entry points]
+    META --> REQS[PEP440 -> Rez requirements]
+    REQS --> COPY[Copy payload into repo layout]
+    COPY --> PKGDEF[Write package.py + metadata]
 ```

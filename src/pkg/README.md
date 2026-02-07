@@ -10,6 +10,7 @@ Command-line interface for pkg-rs. Provides environment setup, package inspectio
 - `pkg pip` installs a Python package into a repository and generates a `package.py` wrapper.
 
 ## Current Status
-- Build command supports Rez-style build variables, variants, hashed variants, and `pre_build_commands`.
-- Pip command matches rez-pip install layout (dist-info parsing, entry-point wrappers, hashed variants), with simplified dependency handling.
-- Some Rez-only flows (rezified pip/python context, release hooks, central build) are not implemented.
+- Build command supports Rez-style build variables, variants, hashed variants, `pre_build_commands`, and modular build systems (`custom`, `make`, `cmake`, `cargo`, `python`).
+- Pip command matches rez-pip install layout (dist-info parsing, entry-point wrappers, hashed variants) and bundles dependencies when multiple dist-info are present.
+- Repo configuration is available via `pkg-rs.toml` for scan paths and install targets.
+- Some Rez-only flows (rezified pip/python context, release hooks, suite context) are not implemented.

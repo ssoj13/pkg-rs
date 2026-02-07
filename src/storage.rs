@@ -391,13 +391,17 @@ impl Storage {
                 p.to_vec()
             }
             None => {
-                let locs = Self::default_locations();
+                let locs = Self::default_locations()?;
                 debug!("Storage: using {} default locations", locs.len());
                 locs
             }
         };
 
         storage.locations = locations.clone();
+
+        let scan_depth = crate::config::get()
+            .ok()
+            .and_then(|cfg| cfg.repos.scan_depth);
 
         // Collect all package.py files in parallel using jwalk
         let package_files: Vec<PathBuf> = locations
@@ -408,6 +412,15 @@ impl Storage {
                 WalkDir::new(location)
                     .into_iter()
                     .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        if let Some(max_depth) = scan_depth {
+                            if let Ok(rel) = e.path().strip_prefix(location) {
+                                let depth = rel.components().count();
+                                return depth <= max_depth;
+                            }
+                        }
+                        true
+                    })
                     .filter(|e| e.file_type().is_file())
                     .filter(|e| e.file_name().to_string_lossy() == PACKAGE_FILE)
                     .map(|e| e.path())
@@ -484,8 +497,25 @@ impl Storage {
     /// 2. PKG_LOCATIONS env var
     /// 3. "repo" folder in cwd (if exists)
     /// 4. nothing
-    fn default_locations() -> Vec<PathBuf> {
+    fn default_locations() -> Result<Vec<PathBuf>, StorageError> {
         let mut locations = Vec::new();
+
+        match crate::config::get() {
+            Ok(config) => {
+                let config_paths = crate::config::repo_scan_paths(config);
+                if !config_paths.is_empty() {
+                    return Ok(config_paths);
+                }
+            }
+            Err(err) => {
+                return Err(StorageError::Config {
+                    path: err
+                        .path
+                        .unwrap_or_else(|| PathBuf::from("pkg-rs.toml")),
+                    reason: err.reason,
+                });
+            }
+        }
 
         // 1. Environment variable (highest priority for default scan)
         if let Ok(env_paths) = env::var(PKG_LOCATIONS_VAR) {
@@ -511,7 +541,7 @@ impl Storage {
             }
         }
 
-        locations
+        Ok(locations)
     }
 
     /// Scan .toolsets directory for toolset definitions.

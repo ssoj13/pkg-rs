@@ -117,6 +117,24 @@ app.path = "/opt/mytool/bin/mytool"
 p.add_app(app)
 ```
 
+## Configuration
+
+pkg can read a TOML config file named `pkg-rs.toml`. Search order:
+
+1. `--cfg <path>` (full override, error if missing)
+2. `PKG_RS_CONFIG` env var
+3. `pkg-rs.toml` next to the `pkg` binary
+4. `~/.pkg-rs/pkg-rs.toml`
+
+If none are found, pkg creates a default config at `~/.pkg-rs/pkg-rs.toml`.
+
+Minimal example:
+
+```toml
+[repos]
+paths = ["D:/packages", "D:/tools"]
+```
+
 ## Package Structure
 
 ```

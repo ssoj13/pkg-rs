@@ -17,12 +17,17 @@ use clap::{CommandFactory, Parser};
 use clap_complete::generate;
 use cli::{Cli, Commands};
 use log::{debug, info, trace};
-use pkg_lib::Storage;
+use pkg_lib::{config, Storage};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+
+    if let Err(err) = config::init(cli.cfg.clone()) {
+        eprintln!("Config error: {}", err);
+        return ExitCode::FAILURE;
+    }
 
     // Initialize logging
     init_logging(cli.verbose, &cli.log_file);
@@ -324,9 +329,11 @@ fn build_storage(
     user_packages: bool,
 ) -> Result<Storage, String> {
     let mut all_paths = Vec::new();
+    let config = config::get().map_err(|e| e.to_string())?;
+    let use_user_packages = user_packages || config.repos.user_packages.unwrap_or(false);
 
     // Add user packages first (highest priority - overrides)
-    if user_packages {
+    if use_user_packages {
         if let Some(user_dir) = Storage::user_packages_dir() {
             if user_dir.exists() {
                 debug!("Adding user packages: {}", user_dir.display());
