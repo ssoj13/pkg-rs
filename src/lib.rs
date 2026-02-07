@@ -125,6 +125,8 @@
 //! - `python` (default) - Enable Python bindings via PyO3
 
 pub mod app;
+pub mod build;
+pub mod build_command;
 pub mod cache;
 pub mod dep;
 pub mod env;
@@ -133,6 +135,7 @@ pub mod evar;
 pub mod loader;
 pub mod name;
 pub mod package;
+pub mod pip;
 pub mod solver;
 pub mod storage;
 pub mod token;
@@ -144,10 +147,11 @@ pub mod gui;
 pub use app::App;
 pub use dep::DepSpec;
 pub use env::Env;
-pub use error::{EnvError, EvarError, LoaderError, PackageError, PkgError, SolverError, StorageError};
+pub use error::{BuildError, EnvError, EvarError, LoaderError, PackageError, PipError, PkgError, SolverError, StorageError};
 pub use evar::{Action, Evar};
 pub use loader::Loader;
 pub use package::{Package, SolveStatus};
+pub use build_command::BuildCommand;
 pub use solver::{PackageIndex, Solver};
 pub use storage::Storage;
 

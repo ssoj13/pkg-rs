@@ -122,6 +122,66 @@ fn main() -> ExitCode {
                 cli.verbose > 0,
             )
         }
+        Commands::Build {
+            clean,
+            install,
+            prefix,
+            build_system,
+            process,
+            variants,
+            build_args,
+            child_build_args,
+            scripts,
+            view_pre,
+            extra_args,
+        } => {
+            debug!("cmd: build");
+            commands::cmd_build(
+                &storage,
+                build_system,
+                process,
+                build_args,
+                child_build_args,
+                variants,
+                clean,
+                install,
+                prefix,
+                scripts,
+                view_pre,
+                extra_args,
+            )
+        }
+        Commands::BuildEnv {
+            build_path,
+            variant_index,
+            install,
+            install_path,
+        } => commands::cmd_build_env(build_path, variant_index, install, install_path),
+        Commands::Pip {
+            package,
+            python_version,
+            no_deps,
+            min_deps,
+            install,
+            release,
+            prefix,
+            extra,
+            extra_args,
+        } => {
+            debug!("cmd: pip package={}", package);
+            commands::cmd_pip(
+                &storage,
+                package,
+                python_version,
+                no_deps,
+                min_deps,
+                install,
+                release,
+                prefix,
+                extra,
+                extra_args,
+            )
+        }
         Commands::Graph {
             packages,
             format,

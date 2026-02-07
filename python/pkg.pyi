@@ -1,6 +1,6 @@
 """Type stubs for packager - Rust package manager with Python bindings."""
 
-from typing import Optional, Dict, List, Any, Union
+from typing import Optional, Dict, List, Any, Union, Literal
 from enum import IntEnum
 
 class SolveStatus(IntEnum):
@@ -194,12 +194,28 @@ class Package:
     name: str
     base: str
     version: str
+    description: Optional[str]
     envs: List[Env]
     apps: List[App]
     reqs: List[str]
+    build_requires: List[str]
+    private_build_requires: List[str]
+    build_system: Optional[str]
+    build_command: Optional[Union[Literal[False], str, List[str]]]
+    build_directory: Optional[str]
+    build_args: List[str]
+    pre_build_commands: Optional[str]
+    variants: List[List[str]]
+    hashed_variants: bool
     deps: List[str]
     tags: List[str]
     icon: Optional[str]
+    pip_name: Optional[str]
+    from_pip: bool
+    is_pure_python: bool
+    help: List[List[str]]
+    authors: List[str]
+    tools: List[str]
     solve_status: SolveStatus
     solve_error: Optional[str]
     
@@ -208,6 +224,7 @@ class Package:
     def add_env(self, env: Env) -> None: ...
     def add_app(self, app: App) -> None: ...
     def add_req(self, req: str) -> None: ...
+    def add_build_req(self, req: str) -> None: ...
     def add_tag(self, tag: str) -> None: ...
     
     def get_env(self, name: str) -> Optional[Env]: ...

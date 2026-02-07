@@ -28,17 +28,40 @@ pub fn depspec_to_ranges(spec: &DepSpec) -> Result<Ranges<Version>, SolverError>
         return Ok(Ranges::full());
     }
 
+    // Union (OR) constraints
+    if constraint.contains('|') {
+        let mut union_range: Option<Ranges<Version>> = None;
+        for part in constraint.split('|') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            let range = parse_constraint_part(part)?;
+            union_range = Some(match union_range {
+                None => range,
+                Some(existing) => existing.union(&range),
+            });
+        }
+        return union_range.ok_or_else(|| SolverError::InvalidDependency {
+            package: "".to_string(),
+            dependency: constraint.to_string(),
+            reason: "Empty union constraint".to_string(),
+        });
+    }
+
     // Try as exact version first
     if let Ok(ver) = Version::parse(constraint) {
         return Ok(Ranges::singleton(ver));
     }
 
     // Handle comma-separated constraints (intersection)
+    parse_constraint_part(constraint)
+}
+
+fn parse_constraint_part(constraint: &str) -> Result<Ranges<Version>, SolverError> {
     if constraint.contains(',') {
         return parse_intersection(constraint);
     }
-
-    // Single constraint
     parse_single_constraint(constraint)
 }
 

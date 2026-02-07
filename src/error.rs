@@ -51,6 +51,14 @@ pub enum PkgError {
     #[error("loader error: {0}")]
     Loader(#[from] LoaderError),
 
+    /// Error from build pipeline
+    #[error("build error: {0}")]
+    Build(#[from] BuildError),
+
+    /// Error from pip import
+    #[error("pip error: {0}")]
+    Pip(#[from] PipError),
+
     /// IO error (file operations)
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
@@ -253,6 +261,52 @@ pub enum SolverError {
         /// Missing version
         version: String,
     },
+}
+
+/// Errors from the build pipeline.
+#[derive(Error, Debug)]
+pub enum BuildError {
+    /// Build configuration error
+    #[error("build config error: {0}")]
+    Config(String),
+
+    /// Build dependency resolution error
+    #[error("build resolve error: {0}")]
+    Resolve(String),
+
+    /// Build command failed
+    #[error("build command failed: {command} (exit {code:?})")]
+    CommandFailed {
+        /// Command string
+        command: String,
+        /// Exit code (if available)
+        code: Option<i32>,
+    },
+
+    /// IO error
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+/// Errors from pip import.
+#[derive(Error, Debug)]
+pub enum PipError {
+    /// Pip configuration error
+    #[error("pip config error: {0}")]
+    Config(String),
+
+    /// Pip command failed
+    #[error("pip command failed: {command} (exit {code:?})")]
+    CommandFailed {
+        /// Command string
+        command: String,
+        /// Exit code (if available)
+        code: Option<i32>,
+    },
+
+    /// IO error
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 /// Errors from [`Storage`](crate::Storage) operations.

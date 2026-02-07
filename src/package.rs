@@ -111,6 +111,7 @@
 //! ```
 
 use crate::app::App;
+use crate::build_command::BuildCommand;
 use crate::env::Env;
 use crate::error::PackageError;
 use pyo3::prelude::*;
@@ -192,6 +193,11 @@ pub struct Package {
     #[pyo3(get)]
     pub version: String,
 
+    /// Optional description.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
     /// Named environments (e.g., "default", "dev", "debug").
     /// Apps reference these by name.
     #[pyo3(get, set)]
@@ -206,6 +212,51 @@ pub struct Package {
     /// Processed by the solver to find compatible versions.
     #[pyo3(get, set)]
     pub reqs: Vec<String>,
+
+    /// Build-time only dependency requirements (not propagated).
+    #[pyo3(get, set)]
+    #[serde(default)]
+    pub build_requires: Vec<String>,
+
+    /// Private build-time requirements (not propagated).
+    #[pyo3(get, set)]
+    #[serde(default)]
+    pub private_build_requires: Vec<String>,
+
+    /// Build system name (custom/make/cmake).
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_system: Option<String>,
+
+    /// Build command for custom build system.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_command: Option<BuildCommand>,
+
+    /// Build directory (absolute or relative to package source).
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_directory: Option<String>,
+
+    /// Build arguments passed to the build system.
+    #[pyo3(get, set)]
+    #[serde(default)]
+    pub build_args: Vec<String>,
+
+    /// Pre-build commands executed before the build.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pre_build_commands: Option<String>,
+
+    /// Variant requirements (each entry is a list of requirements).
+    #[pyo3(get, set)]
+    #[serde(default)]
+    pub variants: Vec<Vec<String>>,
+
+    /// Enable hashed variant subpaths.
+    #[pyo3(get, set)]
+    #[serde(default)]
+    pub hashed_variants: bool,
 
     /// Resolved dependencies (full Package objects).
     /// Populated by the solver after successful resolution.
@@ -224,6 +275,36 @@ pub struct Package {
     /// Path to package icon (relative to package root or absolute).
     #[pyo3(get, set)]
     pub icon: Option<String>,
+
+    /// Pip distribution name/version string (pip imports only).
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pip_name: Option<String>,
+
+    /// True if this package originated from pip import.
+    #[pyo3(get, set)]
+    #[serde(default)]
+    pub from_pip: bool,
+
+    /// True if pip package is pure python.
+    #[pyo3(get, set)]
+    #[serde(default)]
+    pub is_pure_python: bool,
+
+    /// Help links (pairs of label/url).
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub help: Vec<Vec<String>>,
+
+    /// Authors list.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub authors: Vec<String>,
+
+    /// Tools list (entry points).
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<String>,
 
     /// Status of dependency resolution.
     #[pyo3(get)]
@@ -262,12 +343,28 @@ impl Package {
             name,
             base,
             version,
+            description: None,
             envs: Vec::new(),
             apps: Vec::new(),
             reqs: Vec::new(),
+            build_requires: Vec::new(),
+            private_build_requires: Vec::new(),
+            build_system: None,
+            build_command: None,
+            build_directory: None,
+            build_args: Vec::new(),
+            pre_build_commands: None,
+            variants: Vec::new(),
+            hashed_variants: false,
             deps: Vec::new(),
             tags: Vec::new(),
             icon: None,
+            pip_name: None,
+            from_pip: false,
+            is_pure_python: false,
+            help: Vec::new(),
+            authors: Vec::new(),
+            tools: Vec::new(),
             solve_status: SolveStatus::NotSolved,
             solve_error: None,
             package_source: None,
@@ -299,6 +396,11 @@ impl Package {
     /// * `req` - Requirement string (e.g., "redshift@>=3.5,<4.0")
     pub fn add_req(&mut self, req: String) {
         self.reqs.push(req);
+    }
+
+    /// Add a build requirement (build-time dependency constraint).
+    pub fn add_build_req(&mut self, req: String) {
+        self.build_requires.push(req);
     }
 
     /// Add a tag to the package.
@@ -496,6 +598,7 @@ impl Package {
         dict.set_item("name", &self.name)?;
         dict.set_item("base", &self.base)?;
         dict.set_item("version", &self.version)?;
+        dict.set_item("description", &self.description)?;
 
         // Envs
         let envs_list = PyList::empty(py);
@@ -513,12 +616,27 @@ impl Package {
 
         // Reqs and deps (deps as names for serialization)
         dict.set_item("reqs", PyList::new(py, &self.reqs)?)?;
+        dict.set_item("build_requires", PyList::new(py, &self.build_requires)?)?;
+        dict.set_item("private_build_requires", PyList::new(py, &self.private_build_requires)?)?;
+        dict.set_item("build_system", &self.build_system)?;
+        dict.set_item("build_command", self.build_command.clone())?;
+        dict.set_item("build_directory", &self.build_directory)?;
+        dict.set_item("build_args", PyList::new(py, &self.build_args)?)?;
+        dict.set_item("pre_build_commands", &self.pre_build_commands)?;
+        dict.set_item("variants", PyList::new(py, &self.variants)?)?;
+        dict.set_item("hashed_variants", &self.hashed_variants)?;
         let dep_names: Vec<&str> = self.deps.iter().map(|d| d.name.as_str()).collect();
         dict.set_item("deps", PyList::new(py, &dep_names)?)?;
 
         // Tags and icon
         dict.set_item("tags", PyList::new(py, &self.tags)?)?;
         dict.set_item("icon", &self.icon)?;
+        dict.set_item("pip_name", &self.pip_name)?;
+        dict.set_item("from_pip", &self.from_pip)?;
+        dict.set_item("is_pure_python", &self.is_pure_python)?;
+        dict.set_item("help", PyList::new(py, &self.help)?)?;
+        dict.set_item("authors", PyList::new(py, &self.authors)?)?;
+        dict.set_item("tools", PyList::new(py, &self.tools)?)?;
 
         Ok(dict.into())
     }
@@ -537,6 +655,10 @@ impl Package {
             .extract()?;
 
         let mut pkg = Package::new(base, version);
+
+        if let Some(desc_obj) = dict.get_item("description")? {
+            pkg.description = desc_obj.extract::<Option<String>>()?;
+        }
 
         // Envs
         if let Some(envs_obj) = dict.get_item("envs")? {
@@ -560,6 +682,39 @@ impl Package {
             pkg.reqs = reqs;
         }
 
+        // Build requires and build metadata
+        if let Some(build_reqs_obj) = dict.get_item("build_requires")? {
+            let build_reqs: Vec<String> = build_reqs_obj.extract()?;
+            pkg.build_requires = build_reqs;
+        }
+        if let Some(private_reqs_obj) = dict.get_item("private_build_requires")? {
+            let private_reqs: Vec<String> = private_reqs_obj.extract()?;
+            pkg.private_build_requires = private_reqs;
+        }
+        if let Some(build_system_obj) = dict.get_item("build_system")? {
+            pkg.build_system = build_system_obj.extract::<Option<String>>()?;
+        }
+        if let Some(build_command_obj) = dict.get_item("build_command")? {
+            pkg.build_command = build_command_obj.extract::<Option<BuildCommand>>()?;
+        }
+        if let Some(build_dir_obj) = dict.get_item("build_directory")? {
+            pkg.build_directory = build_dir_obj.extract::<Option<String>>()?;
+        }
+        if let Some(build_args_obj) = dict.get_item("build_args")? {
+            let build_args: Vec<String> = build_args_obj.extract()?;
+            pkg.build_args = build_args;
+        }
+        if let Some(pre_build_obj) = dict.get_item("pre_build_commands")? {
+            pkg.pre_build_commands = pre_build_obj.extract::<Option<String>>()?;
+        }
+        if let Some(variants_obj) = dict.get_item("variants")? {
+            let variants: Vec<Vec<String>> = variants_obj.extract()?;
+            pkg.variants = variants;
+        }
+        if let Some(hashed_obj) = dict.get_item("hashed_variants")? {
+            pkg.hashed_variants = hashed_obj.extract::<bool>()?;
+        }
+
         // Deps - skip, they're populated by solve()
         // (from_dict doesn't restore full Package deps)
 
@@ -572,6 +727,28 @@ impl Package {
         // Icon
         if let Some(icon_obj) = dict.get_item("icon")? {
             pkg.icon = icon_obj.extract().ok();
+        }
+
+        if let Some(pip_name_obj) = dict.get_item("pip_name")? {
+            pkg.pip_name = pip_name_obj.extract::<Option<String>>()?;
+        }
+        if let Some(from_pip_obj) = dict.get_item("from_pip")? {
+            pkg.from_pip = from_pip_obj.extract::<bool>()?;
+        }
+        if let Some(is_pure_obj) = dict.get_item("is_pure_python")? {
+            pkg.is_pure_python = is_pure_obj.extract::<bool>()?;
+        }
+        if let Some(help_obj) = dict.get_item("help")? {
+            let help: Vec<Vec<String>> = help_obj.extract()?;
+            pkg.help = help;
+        }
+        if let Some(authors_obj) = dict.get_item("authors")? {
+            let authors: Vec<String> = authors_obj.extract()?;
+            pkg.authors = authors;
+        }
+        if let Some(tools_obj) = dict.get_item("tools")? {
+            let tools: Vec<String> = tools_obj.extract()?;
+            pkg.tools = tools;
         }
 
         Ok(pkg)

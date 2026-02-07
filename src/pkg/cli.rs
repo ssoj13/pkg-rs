@@ -114,6 +114,90 @@ pub enum Commands {
         stamp: bool,
     },
 
+    /// Build package in current directory
+    Build {
+        /// Clear current build before rebuilding
+        #[arg(short = 'c', long)]
+        clean: bool,
+        /// Install the build to a package repository path
+        #[arg(short = 'i', long)]
+        install: bool,
+        /// Install to a custom package repository path
+        #[arg(short = 'p', long)]
+        prefix: Option<PathBuf>,
+        /// Build system to use (custom, make, cmake)
+        #[arg(short = 'b', long = "build-system")]
+        build_system: Option<String>,
+        /// Build process to use (local, central)
+        #[arg(long = "process", default_value = "local", value_parser = ["local", "central"])]
+        process: String,
+        /// Select variants to build (zero-indexed)
+        #[arg(long = "variants")]
+        variants: Vec<usize>,
+        /// Arguments to pass to the build system
+        #[arg(long = "build-args")]
+        build_args: Option<String>,
+        /// Arguments to pass to a child build system
+        #[arg(long = "child-build-args")]
+        child_build_args: Option<String>,
+        /// Create build scripts instead of running the build
+        #[arg(short = 's', long)]
+        scripts: bool,
+        /// Print preprocessed package definition and exit
+        #[arg(long = "view-pre")]
+        view_pre: bool,
+        /// Extra build args after --
+        #[arg(last = true)]
+        extra_args: Vec<String>,
+    },
+
+    /// Spawn a build environment from build.rxt (internal)
+    #[command(name = "build-env", hide = true)]
+    BuildEnv {
+        /// Build directory containing build.rxt
+        #[arg(long = "build-path")]
+        build_path: PathBuf,
+        /// Variant index (optional)
+        #[arg(long = "variant-index")]
+        variant_index: Option<usize>,
+        /// Install flag (affects REZ_BUILD_INSTALL)
+        #[arg(long = "install")]
+        install: bool,
+        /// Install path (optional)
+        #[arg(long = "install-path")]
+        install_path: Option<PathBuf>,
+    },
+
+    /// Install a pip package into a repository
+    Pip {
+        /// Package name, path, or URL to install
+        package: String,
+        /// Python version to use for pip (e.g., 3.11)
+        #[arg(long = "python-version")]
+        python_version: Option<String>,
+        /// Do not install dependencies
+        #[arg(long = "no-deps", conflicts_with = "min_deps")]
+        no_deps: bool,
+        /// Install minimal dependencies (default)
+        #[arg(long = "min-deps", conflicts_with = "no_deps")]
+        min_deps: bool,
+        /// Install the package (required)
+        #[arg(short = 'i', long)]
+        install: bool,
+        /// Install as released package
+        #[arg(long)]
+        release: bool,
+        /// Install to a custom package repository path
+        #[arg(short = 'p', long)]
+        prefix: Option<PathBuf>,
+        /// Extra args passed to pip install
+        #[arg(long = "extra")]
+        extra: Option<String>,
+        /// Extra pip args after --
+        #[arg(last = true)]
+        extra_args: Vec<String>,
+    },
+
     /// Show dependency graph
     Graph {
         /// Package name(s)

@@ -316,6 +316,20 @@ impl DepSpec {
             return Ok(true);
         }
 
+        if self.constraint.contains('|') {
+            for part in self.constraint.split('|') {
+                let part = part.trim();
+                if part.is_empty() {
+                    continue;
+                }
+                let spec = DepSpec::new(self.base.clone(), Some(part.to_string()));
+                if spec.matches_impl(version)? {
+                    return Ok(true);
+                }
+            }
+            return Ok(false);
+        }
+
         // Try exact match first
         if let Ok(exact) = Version::parse(&self.constraint) {
             return Ok(ver == exact);
@@ -333,6 +347,14 @@ impl DepSpec {
     /// Get parsed VersionReq for solver integration.
     pub fn version_req(&self) -> Result<VersionReq, PackageError> {
         if self.constraint == "*" {
+            return VersionReq::parse("*").map_err(|e| PackageError::InvalidVersion {
+                version: "*".to_string(),
+                reason: e.to_string(),
+            });
+        }
+
+        if self.constraint.contains('|') {
+            // Fallback to any-version requirement; union ranges are handled in solver.
             return VersionReq::parse("*").map_err(|e| PackageError::InvalidVersion {
                 version: "*".to_string(),
                 reason: e.to_string(),

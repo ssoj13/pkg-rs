@@ -235,6 +235,44 @@ impl Loader {
         self.load_impl(path, &[], &HashMap::new())
     }
 
+    fn extract_pre_build_commands_from_code(&self, code: &str) -> Option<String> {
+        let mut lines = code.lines();
+        let mut captured = Vec::new();
+        let mut in_block = false;
+        let mut base_indent = 0usize;
+
+        while let Some(line) = lines.next() {
+            let trimmed = line.trim_start();
+            if !in_block {
+                if trimmed.starts_with("def pre_build_commands")
+                    || trimmed.starts_with("async def pre_build_commands")
+                {
+                    base_indent = line.len() - trimmed.len();
+                    captured.push(line);
+                    in_block = true;
+                }
+                continue;
+            }
+
+            if trimmed.is_empty() {
+                captured.push(line);
+                continue;
+            }
+
+            let indent = line.len() - trimmed.len();
+            if indent <= base_indent {
+                break;
+            }
+            captured.push(line);
+        }
+
+        if captured.is_empty() {
+            None
+        } else {
+            Some(captured.join("\n"))
+        }
+    }
+
     /// Load with full arguments.
     pub fn load_with_args(
         &mut self,
@@ -294,6 +332,8 @@ impl Loader {
         debug!("Loader: executing {}", path.display());
         trace!("Loader: code length={} args={:?} kwargs={:?}", code.len(), args, kwargs);
 
+        let pre_build_fallback = self.extract_pre_build_commands_from_code(code);
+
         Python::attach(|py| {
             // Create execution globals with injected classes
             trace!("Loader: creating Python globals");
@@ -313,6 +353,10 @@ impl Loader {
                     reason: format!("Python error:\n{}", traceback),
                 });
             }
+
+            let pre_build_commands = self
+                .extract_pre_build_commands(py, &globals)
+                .or(pre_build_fallback);
 
             // Get get_package function
             let get_package = globals.get_item("get_package").map_err(|_e| {
@@ -351,7 +395,11 @@ impl Loader {
             };
 
             // Convert result to Package
-            self.extract_package(py, &result, path)
+            let mut pkg = self.extract_package(py, &result, path)?;
+            if pkg.pre_build_commands.is_none() {
+                pkg.pre_build_commands = pre_build_commands;
+            }
+            Ok(pkg)
         })
     }
 
@@ -439,6 +487,23 @@ impl Loader {
         }
 
         Ok(globals)
+    }
+
+    /// Extract Rez-style pre_build_commands source if present.
+    fn extract_pre_build_commands(
+        &self,
+        py: Python<'_>,
+        globals: &Bound<'_, PyDict>,
+    ) -> Option<String> {
+        let func = globals.get_item("pre_build_commands").ok()??;
+        if !func.is_callable() {
+            return None;
+        }
+
+        let inspect = py.import("inspect").ok()?;
+        let getsource = inspect.getattr("getsource").ok()?;
+        let source = getsource.call1((func,)).ok()?;
+        source.extract::<String>().ok()
     }
 
     /// Extract Package from Python object.

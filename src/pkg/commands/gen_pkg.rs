@@ -95,8 +95,21 @@ requires = []
 # Build-time only dependencies (not propagated)
 build_requires = []
 
-# Optional features that can be enabled
-# variants = ["py39", "py310", "py311"]
+# Private build-time dependencies (not propagated, build-only)
+# private_build_requires = []
+
+# Build system configuration
+# build_system = "custom"  # custom, make, cmake
+# build_command = ""        # command for custom build (string, list, or False)
+# build_directory = "build" # relative to package source
+# build_args = []           # extra args for build system
+
+# Optional Rez-style pre-build commands (source code string)
+# pre_build_commands = ""  # e.g. "env.FOO = 'bar'"
+
+# Optional variant definitions (list of requirement lists)
+# variants = [["python@>=3.10,<3.11"], ["python@>=3.11,<3.12"]]
+# hashed_variants = False
 
 # =============================================================================
 # Environment variables
