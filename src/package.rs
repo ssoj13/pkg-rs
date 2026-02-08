@@ -225,6 +225,11 @@ pub struct Package {
     #[serde(default)]
     pub private_build_requires: Vec<String>,
 
+    /// Required Rez version (Rez parity).
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires_rez_version: Option<String>,
+
     /// True if this package provides plugins.
     #[pyo3(get, set)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -440,6 +445,7 @@ impl Package {
             reqs: Vec::new(),
             build_requires: Vec::new(),
             private_build_requires: Vec::new(),
+            requires_rez_version: None,
             has_plugins: None,
             plugin_for: Vec::new(),
             build_system: None,
@@ -793,6 +799,7 @@ impl Package {
         dict.set_item("reqs", PyList::new(py, &self.reqs)?)?;
         dict.set_item("build_requires", PyList::new(py, &self.build_requires)?)?;
         dict.set_item("private_build_requires", PyList::new(py, &self.private_build_requires)?)?;
+        dict.set_item("requires_rez_version", &self.requires_rez_version)?;
         dict.set_item("has_plugins", &self.has_plugins)?;
         dict.set_item("plugin_for", PyList::new(py, &self.plugin_for)?)?;
         dict.set_item("build_system", &self.build_system)?;
@@ -909,6 +916,9 @@ impl Package {
         if let Some(private_reqs_obj) = dict.get_item("private_build_requires")? {
             let private_reqs: Vec<String> = private_reqs_obj.extract()?;
             pkg.private_build_requires = private_reqs;
+        }
+        if let Some(rez_req_obj) = dict.get_item("requires_rez_version")? {
+            pkg.requires_rez_version = rez_req_obj.extract::<Option<String>>()?;
         }
         if let Some(has_plugins_obj) = dict.get_item("has_plugins")? {
             pkg.has_plugins = has_plugins_obj.extract::<Option<bool>>()?;
@@ -1048,6 +1058,7 @@ impl Package {
             "reqs",
             "build_requires",
             "private_build_requires",
+            "requires_rez_version",
             "has_plugins",
             "plugin_for",
             "build_system",

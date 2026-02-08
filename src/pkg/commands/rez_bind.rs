@@ -11,6 +11,18 @@ use std::process::ExitCode;
 pub fn cmd_rez_bind(args: &RezStubArgs) -> ExitCode {
     let parsed = parse_bind_args(&args.args);
     if !parsed.quickstart {
+        if parsed.list || parsed.search {
+            return super::cmd_rez_passthrough("bind", &args.args);
+        }
+
+        if parsed.unknown.is_empty() {
+            if let Some(pkg) = parsed.pkg.as_deref() {
+                if let Some(exit) = try_native_bind(pkg, &parsed) {
+                    return exit;
+                }
+            }
+        }
+
         return super::cmd_rez_passthrough("bind", &args.args);
     }
 
@@ -30,6 +42,7 @@ struct BindQuickstartArgs {
     no_deps: bool,
     install_path: Option<PathBuf>,
     unknown: Vec<String>,
+    pkg: Option<String>,
 }
 
 fn parse_bind_args(args: &[String]) -> BindQuickstartArgs {
@@ -67,7 +80,11 @@ fn parse_bind_args(args: &[String]) -> BindQuickstartArgs {
                 }
             }
             _ => {
-                parsed.unknown.push(args[i].clone());
+                if parsed.pkg.is_none() && !args[i].starts_with('-') {
+                    parsed.pkg = Some(args[i].clone());
+                } else {
+                    parsed.unknown.push(args[i].clone());
+                }
                 i += 1;
             }
         }
@@ -220,6 +237,169 @@ fn cmd_quickstart(args: BindQuickstartArgs) -> ExitCode {
     }
 }
 
+fn try_native_bind(pkg: &str, args: &BindQuickstartArgs) -> Option<ExitCode> {
+    let pkg_name = match pkg {
+        "platform" | "arch" | "os" => pkg,
+        _ => return None,
+    };
+
+    if pkg.contains(['!', '+', '<', '>', '=']) || pkg.contains('-') {
+        return None;
+    }
+
+    let install_path = match resolve_install_path(args) {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("{}", err);
+            return Some(ExitCode::FAILURE);
+        }
+    };
+
+    let version = match pkg_name {
+        "platform" => detect_platform(),
+        "arch" => detect_arch(),
+        "os" => detect_os(),
+        _ => "unknown".to_string(),
+    };
+
+    if package_version_installed(&install_path, pkg_name, &version) {
+        println!("Skipping {} (already installed)", pkg_name);
+        return Some(ExitCode::SUCCESS);
+    }
+
+    if let Err(err) = write_basic_package(&install_path, pkg_name, &version) {
+        eprintln!("Failed to bind {}: {}", pkg_name, err);
+        return Some(ExitCode::FAILURE);
+    }
+
+    println!(
+        "Installed {} {} into {}",
+        pkg_name,
+        version,
+        install_path.display()
+    );
+    Some(ExitCode::SUCCESS)
+}
+
+fn resolve_install_path(args: &BindQuickstartArgs) -> Result<PathBuf, String> {
+    let cfg = config::get().map_err(|e| e.to_string())?;
+    if let Some(path) = &args.install_path {
+        return Ok(path.clone());
+    }
+    if args.release {
+        return config::release_packages_path(cfg)
+            .ok_or_else(|| "rez bind --release: release_packages_path is not set".to_string());
+    }
+    config::local_packages_path(cfg)
+        .ok_or_else(|| "rez bind: local_packages_path is not set".to_string())
+}
+
+fn write_basic_package(repo: &Path, name: &str, version: &str) -> Result<(), String> {
+    let pkg_dir = repo.join(name).join(version);
+    std::fs::create_dir_all(&pkg_dir).map_err(|e| e.to_string())?;
+    let package_py = pkg_dir.join("package.py");
+    let content = format!(
+        "from pkg import Package\n\n\ndef get_package():\n    pkg = Package(\"{}\", \"{}\")\n    return pkg\n",
+        name, version
+    );
+    std::fs::write(package_py, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn detect_platform() -> String {
+    std::env::consts::OS.to_string()
+}
+
+fn detect_arch() -> String {
+    if cfg!(windows) {
+        std::env::var("PROCESSOR_ARCHITECTURE")
+            .unwrap_or_else(|_| std::env::consts::ARCH.to_string())
+    } else {
+        std::env::consts::ARCH.to_string()
+    }
+}
+
+fn detect_os() -> String {
+    if cfg!(windows) {
+        detect_windows_version()
+            .map(|ver| format!("windows-{}", ver))
+            .unwrap_or_else(|| "windows".to_string())
+    } else if cfg!(target_os = "macos") {
+        detect_macos_version()
+            .map(|ver| format!("osx-{}", ver))
+            .unwrap_or_else(|| "osx".to_string())
+    } else if cfg!(target_os = "linux") {
+        detect_linux_version().unwrap_or_else(|| "linux".to_string())
+    } else {
+        std::env::consts::OS.to_string()
+    }
+}
+
+#[cfg(windows)]
+fn detect_windows_version() -> Option<String> {
+    use winreg::enums::HKEY_LOCAL_MACHINE;
+    use winreg::RegKey;
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let key = hklm
+        .open_subkey("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion")
+        .ok()?;
+    let major: u32 = key.get_value("CurrentMajorVersionNumber").ok().unwrap_or(10);
+    let minor: u32 = key.get_value("CurrentMinorVersionNumber").ok().unwrap_or(0);
+    let build: String = key
+        .get_value("CurrentBuildNumber")
+        .ok()
+        .unwrap_or_else(|| "0".to_string());
+    Some(format!("{}.{}.{}", major, minor, build))
+}
+
+#[cfg(not(windows))]
+fn detect_windows_version() -> Option<String> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn detect_macos_version() -> Option<String> {
+    let output = std::process::Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()?;
+    let ver = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if ver.is_empty() {
+        None
+    } else {
+        Some(ver)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn detect_macos_version() -> Option<String> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn detect_linux_version() -> Option<String> {
+    let content = std::fs::read_to_string("/etc/os-release").ok()?;
+    let mut id = None;
+    let mut version = None;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("ID=") {
+            id = Some(rest.trim_matches('"').to_string());
+        } else if let Some(rest) = line.strip_prefix("VERSION_ID=") {
+            version = Some(rest.trim_matches('"').to_string());
+        }
+    }
+    if let (Some(id), Some(version)) = (id, version) {
+        Some(format!("{}-{}", id, version))
+    } else {
+        None
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn detect_linux_version() -> Option<String> {
+    None
+}
+
 fn package_already_installed(repo: &Path, name: &str) -> bool {
     let base = repo.join(name);
     if !base.is_dir() {
@@ -245,7 +425,12 @@ fn package_already_installed(repo: &Path, name: &str) -> bool {
             }
         }
     }
-    true
+    false
+}
+
+fn package_version_installed(repo: &Path, name: &str, version: &str) -> bool {
+    let path = repo.join(name).join(version).join("package.py");
+    path.is_file()
 }
 
 fn setup_capture(py: Python<'_>) -> PyResult<(pyo3::Bound<'_, PyAny>, pyo3::Bound<'_, PyAny>)> {

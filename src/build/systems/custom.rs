@@ -41,14 +41,17 @@ impl BuildSystem for CustomBuildSystem {
         let install_flag = if ctx.install { "install" } else { "" };
 
         let expand = |text: &str| -> String {
-            text.replace("{root}", &root_abs.display().to_string())
+            text.replace("{root}", &super::super::normalize_path_for_shell(&root_abs))
                 .replace("{install}", install_flag)
-                .replace("{build_path}", &build_abs.display().to_string())
+                .replace(
+                    "{build_path}",
+                    &super::super::normalize_path_for_shell(&build_abs),
+                )
                 .replace(
                     "{install_path}",
                     &install_abs
                         .as_ref()
-                        .map(|p| p.display().to_string())
+                        .map(|p| super::super::normalize_path_for_shell(p))
                         .unwrap_or_default(),
                 )
                 .replace("{name}", &ctx.package.base)

@@ -62,15 +62,15 @@ fn main() -> ExitCode {
     }
     if let Commands::Rez(RezCommands::Context(args)) = &command {
         debug!("cmd: rez context");
-        return commands::cmd_rez_passthrough("context", &args.args);
+        return commands::cmd_rez_context(args);
     }
     if let Commands::Rez(RezCommands::Status(args)) = &command {
         debug!("cmd: rez status");
-        return commands::cmd_rez_passthrough("status", &args.args);
+        return commands::cmd_rez_status(args);
     }
     if let Commands::Rez(RezCommands::Suite(args)) = &command {
         debug!("cmd: rez suite");
-        return commands::cmd_rez_passthrough("suite", &args.args);
+        return commands::cmd_rez_suite(args);
     }
 
     // Build storage with custom repos if provided
@@ -278,7 +278,7 @@ fn main() -> ExitCode {
             }
             RezCommands::Bind(args) => commands::cmd_rez_bind(&args),
             RezCommands::Config(args) => commands::cmd_rez_config(&args),
-            RezCommands::Context(args) => commands::cmd_rez_passthrough("context", &args.args),
+            RezCommands::Context(args) => commands::cmd_rez_context(&args),
             RezCommands::Cp(args) => cmd_rez_stub("rez cp", args.args),
             RezCommands::Depends(args) => cmd_rez_stub("rez depends", args.args),
             RezCommands::Diff(args) => cmd_rez_stub("rez diff", args.args),
@@ -292,8 +292,8 @@ fn main() -> ExitCode {
             RezCommands::Release(args) => cmd_rez_stub("rez release", args.args),
             RezCommands::Search(args) => cmd_rez_stub("rez search", args.args),
             RezCommands::Selftest(args) => cmd_rez_stub("rez selftest", args.args),
-            RezCommands::Status(args) => commands::cmd_rez_passthrough("status", &args.args),
-            RezCommands::Suite(args) => commands::cmd_rez_passthrough("suite", &args.args),
+            RezCommands::Status(args) => commands::cmd_rez_status(&args),
+            RezCommands::Suite(args) => commands::cmd_rez_suite(&args),
             RezCommands::Test(args) => cmd_rez_stub("rez test", args.args),
             RezCommands::View(args) => cmd_rez_stub("rez view", args.args),
             RezCommands::Yaml2py(args) => cmd_rez_stub("rez yaml2py", args.args),

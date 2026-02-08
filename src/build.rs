@@ -590,10 +590,11 @@ fn create_build_env(
     build_type: BuildType,
 ) -> Result<BuildEnvResult, BuildError> {
     let mut requested = Vec::new();
-    requested.extend(package.build_requires.iter().cloned());
-    requested.extend(package.private_build_requires.iter().cloned());
+    // Rez order: requires + variant requires, then build/private build requires.
     requested.extend(package.reqs.iter().cloned());
     requested.extend(variant.requires.iter().cloned());
+    requested.extend(package.build_requires.iter().cloned());
+    requested.extend(package.private_build_requires.iter().cloned());
 
     let requested = dedup_preserve_order(requested);
 
@@ -687,7 +688,7 @@ fn build_env_vars(
     vars.insert("REZ_BUILD_ENV".to_string(), "1".to_string());
     vars.insert(
         "REZ_BUILD_PATH".to_string(),
-        build_path_abs.display().to_string(),
+        normalize_path_for_shell(&build_path_abs),
     );
     vars.insert(
         "REZ_BUILD_THREAD_COUNT".to_string(),
@@ -724,11 +725,11 @@ fn build_env_vars(
     );
     vars.insert(
         "REZ_BUILD_PROJECT_FILE".to_string(),
-        package_file.display().to_string(),
+        normalize_path_for_shell(&package_file),
     );
     vars.insert(
         "REZ_BUILD_SOURCE_PATH".to_string(),
-        source_path.display().to_string(),
+        normalize_path_for_shell(source_path),
     );
     vars.insert(
         "REZ_BUILD_REQUIRES".to_string(),
@@ -748,13 +749,13 @@ fn build_env_vars(
     );
     vars.insert(
         "REZ_RXT_FILE".to_string(),
-        rxt_path_abs.display().to_string(),
+        normalize_path_for_shell(&rxt_path_abs),
     );
 
     if let Some(path) = install_path {
         vars.insert(
             "REZ_BUILD_INSTALL_PATH".to_string(),
-            path.display().to_string(),
+            normalize_path_for_shell(path),
         );
     }
 
@@ -763,6 +764,18 @@ fn build_env_vars(
     }
 
     vars
+}
+
+pub(crate) fn normalize_path_for_shell(path: &Path) -> String {
+    let mut s = path.display().to_string();
+    if cfg!(windows) {
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            s = format!(r"\\{}", rest);
+        } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+            s = rest.to_string();
+        }
+    }
+    s
 }
 
 fn write_build_rxt(
@@ -1388,7 +1401,8 @@ fn apply_pre_build_commands(
     let build_path_abs = build_path
         .canonicalize()
         .unwrap_or_else(|_| build_path.to_path_buf());
-    let install_path_abs = install_path.map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()));
+    let install_path_abs =
+        install_path.map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()));
 
     let _ = Python::initialize();
 
@@ -1526,7 +1540,7 @@ class _VariantBinding:
 
         let this_kwargs = PyDict::new(py);
         this_kwargs
-            .set_item("root", source_dir_abs.display().to_string())
+            .set_item("root", normalize_path_for_shell(&source_dir_abs))
             .ok();
         this_kwargs
             .set_item("name", package.base.clone())
@@ -1553,12 +1567,14 @@ class _VariantBinding:
             .set_item("variant_subpath", variant.subpath.clone())
             .ok();
         this_kwargs
-            .set_item("build_path", build_path_abs.display().to_string())
+            .set_item("build_path", normalize_path_for_shell(&build_path_abs))
             .ok();
         this_kwargs
             .set_item(
                 "install_path",
-                install_path_abs.as_ref().map(|p| p.display().to_string()),
+                install_path_abs
+                    .as_ref()
+                    .map(|p| normalize_path_for_shell(p)),
             )
             .ok();
 
@@ -1579,12 +1595,14 @@ class _VariantBinding:
             .set_item("install", install_path.is_some())
             .ok();
         build_kwargs
-            .set_item("build_path", build_path_abs.display().to_string())
+            .set_item("build_path", normalize_path_for_shell(&build_path_abs))
             .ok();
         build_kwargs
             .set_item(
                 "install_path",
-                install_path_abs.as_ref().map(|p| p.display().to_string()),
+                install_path_abs
+                    .as_ref()
+                    .map(|p| normalize_path_for_shell(p)),
             )
             .ok();
         let ro_cls = globals

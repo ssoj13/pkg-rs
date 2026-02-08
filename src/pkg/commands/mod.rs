@@ -13,6 +13,9 @@ mod pip;
 mod rez_config;
 mod rez_passthrough;
 mod rez_bind;
+mod rez_context;
+mod rez_status;
+mod rez_suite;
 
 pub use list::{cmd_list, matches_glob};
 pub use info::cmd_info;
@@ -27,3 +30,6 @@ pub use pip::cmd_pip;
 pub use rez_config::cmd_rez_config;
 pub use rez_passthrough::cmd_rez_passthrough;
 pub use rez_bind::cmd_rez_bind;
+pub use rez_context::cmd_rez_context;
+pub use rez_status::cmd_rez_status;
+pub use rez_suite::cmd_rez_suite;

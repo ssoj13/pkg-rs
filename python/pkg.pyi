@@ -200,6 +200,7 @@ class Package:
     reqs: List[str]
     build_requires: List[str]
     private_build_requires: List[str]
+    requires_rez_version: Optional[str]
     has_plugins: Optional[bool]
     plugin_for: List[str]
     build_system: Optional[str]
