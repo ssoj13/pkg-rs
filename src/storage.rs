@@ -7,9 +7,8 @@
 //! # Overview
 //!
 //! Storage scans multiple locations for packages:
-//! 1. Default location (platform-specific)
-//! 2. Paths from `PKG_LOCATIONS` environment variable
-//! 3. Explicitly added paths
+//! 1. Default locations from rezconfig `packages_path` (including `REZ_PACKAGES_PATH` overrides)
+//! 2. Explicitly added paths (CLI `--repo` or `Storage::scan_paths`)
 //!
 //! Each location is scanned recursively for `package.py` files.
 //! Found packages are validated and indexed by name and version.
@@ -59,8 +58,9 @@
 //!
 //! # Environment Variables
 //!
-//! - `PKG_LOCATIONS`: Colon/semicolon-separated list of additional
-//!   directories to scan for packages.
+//! - `REZ_PACKAGES_PATH`: Colon/semicolon-separated list of package roots,
+//!   overriding rezconfig `packages_path`.
+//! - `REZ_CONFIG_FILE`: Optional list of config files to layer.
 //!
 //! # Python API
 //!
@@ -91,9 +91,6 @@ use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-
-/// Environment variable for additional package locations.
-const PKG_LOCATIONS_VAR: &str = "PKG_LOCATIONS";
 
 /// Default package file name.
 const PACKAGE_FILE: &str = "package.py";
@@ -140,8 +137,8 @@ impl Storage {
     /// Scan default locations for packages.
     ///
     /// Scans:
-    /// 1. Platform default location
-    /// 2. Paths from PKG_LOCATIONS env var
+    /// 1. rezconfig `packages_path` (including `REZ_PACKAGES_PATH` overrides)
+    /// 2. Fallback `./repo` directory (if no config paths)
     ///
     /// # Returns
     /// Storage with discovered packages.
@@ -399,10 +396,6 @@ impl Storage {
 
         storage.locations = locations.clone();
 
-        let scan_depth = crate::config::get()
-            .ok()
-            .and_then(|cfg| cfg.repos.scan_depth);
-
         // Collect all package.py files in parallel using jwalk
         let package_files: Vec<PathBuf> = locations
             .iter()
@@ -412,15 +405,6 @@ impl Storage {
                 WalkDir::new(location)
                     .into_iter()
                     .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        if let Some(max_depth) = scan_depth {
-                            if let Ok(rel) = e.path().strip_prefix(location) {
-                                let depth = rel.components().count();
-                                return depth <= max_depth;
-                            }
-                        }
-                        true
-                    })
                     .filter(|e| e.file_type().is_file())
                     .filter(|e| e.file_name().to_string_lossy() == PACKAGE_FILE)
                     .map(|e| e.path())
@@ -494,7 +478,7 @@ impl Storage {
     ///
     /// Priority (fallback system):
     /// 1. scan_paths() args - handled by caller
-    /// 2. PKG_LOCATIONS env var
+    /// 2. rezconfig packages_path
     /// 3. "repo" folder in cwd (if exists)
     /// 4. nothing
     fn default_locations() -> Result<Vec<PathBuf>, StorageError> {
@@ -502,7 +486,7 @@ impl Storage {
 
         match crate::config::get() {
             Ok(config) => {
-                let config_paths = crate::config::repo_scan_paths(config);
+                let config_paths = crate::config::packages_path(config);
                 if !config_paths.is_empty() {
                     return Ok(config_paths);
                 }
@@ -511,33 +495,17 @@ impl Storage {
                 return Err(StorageError::Config {
                     path: err
                         .path
-                        .unwrap_or_else(|| PathBuf::from("pkg-rs.toml")),
+                        .unwrap_or_else(|| PathBuf::from("rezconfig.py")),
                     reason: err.reason,
                 });
             }
         }
 
-        // 1. Environment variable (highest priority for default scan)
-        if let Ok(env_paths) = env::var(PKG_LOCATIONS_VAR) {
-            let separator = if cfg!(windows) { ';' } else { ':' };
-            for path in env_paths.split(separator) {
-                let path = path.trim();
-                if !path.is_empty() {
-                    let p = PathBuf::from(path);
-                    if !locations.contains(&p) {
-                        locations.push(p);
-                    }
-                }
-            }
-        }
-
-        // 2. Fallback: "repo" folder in cwd (only if env var not set)
-        if locations.is_empty() {
-            if let Ok(cwd) = env::current_dir() {
-                let repo_path = cwd.join("repo");
-                if repo_path.exists() {
-                    locations.push(repo_path);
-                }
+        // Fallback: "repo" folder in cwd
+        if let Ok(cwd) = env::current_dir() {
+            let repo_path = cwd.join("repo");
+            if repo_path.exists() {
+                locations.push(repo_path);
             }
         }
 

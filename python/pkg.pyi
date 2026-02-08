@@ -200,24 +200,43 @@ class Package:
     reqs: List[str]
     build_requires: List[str]
     private_build_requires: List[str]
+    has_plugins: Optional[bool]
+    plugin_for: List[str]
     build_system: Optional[str]
     build_command: Optional[Union[Literal[False], str, List[str]]]
     build_directory: Optional[str]
     build_args: List[str]
     pre_build_commands: Optional[str]
+    pre_commands: Optional[str]
+    commands: Optional[str]
+    post_commands: Optional[str]
+    pre_test_commands: Optional[str]
+    config: Optional[Any]
     variants: List[List[str]]
     hashed_variants: bool
-    deps: List[str]
+    relocatable: Optional[bool]
+    cachable: Optional[bool]
+    deps: List["Package"]
     tags: List[str]
+    uuid: Optional[str]
     icon: Optional[str]
     pip_name: Optional[str]
     from_pip: bool
     is_pure_python: bool
-    help: List[List[str]]
+    help: Optional[Any]
+    tests: Optional[Any]
     authors: List[str]
     tools: List[str]
+    timestamp: Optional[int]
+    revision: Optional[Any]
+    changelog: Optional[str]
+    release_message: Optional[str]
+    previous_version: Optional[str]
+    previous_revision: Optional[Any]
+    vcs: Optional[str]
     solve_status: SolveStatus
     solve_error: Optional[str]
+    package_source: Optional[str]
     
     def __init__(self, base: str, version: str) -> None: ...
     
@@ -324,7 +343,7 @@ class Storage:
     
     @staticmethod
     def scan() -> "Storage":
-        """Scan default and PKG_LOCATIONS paths."""
+        """Scan default rezconfig packages_path (including REZ_PACKAGES_PATH)."""
         ...
     
     @staticmethod

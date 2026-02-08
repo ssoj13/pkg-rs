@@ -52,14 +52,214 @@ mod ranges;
 use crate::dep::DepSpec;
 use crate::error::SolverError;
 use crate::package::Package;
+use crate::py::ensure_rez_on_sys_path;
 use log::{debug, info};
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 use semver::Version;
 use std::collections::HashMap;
 
 // Re-export PubGrub provider for advanced usage
 pub use provider::PubGrubProvider;
 pub use ranges::depspec_to_ranges;
+
+/// Resolver backend selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolverBackend {
+    Pkg,
+    Rez,
+}
+
+pub fn selected_backend() -> Result<ResolverBackend, SolverError> {
+    if let Ok(config) = crate::config::get() {
+        if let Some(raw) = crate::config::resolver_backend(config) {
+            let name = raw.trim().to_ascii_lowercase();
+            return match name.as_str() {
+                "pkg" | "pubgrub" => Ok(ResolverBackend::Pkg),
+                "rez" => Ok(ResolverBackend::Rez),
+                _ => Err(SolverError::UnsupportedBackend { backend: raw }),
+            };
+        }
+    }
+    Ok(ResolverBackend::Pkg)
+}
+
+pub fn solve_reqs_backend(
+    packages: &[Package],
+    requirements: Vec<String>,
+) -> Result<Vec<String>, SolverError> {
+    match selected_backend()? {
+        ResolverBackend::Pkg => {
+            let solver = Solver::from_packages(packages)?;
+            solver.solve_requirements_impl(&requirements)
+        }
+        ResolverBackend::Rez => solve_reqs_rez(&requirements),
+    }
+}
+
+struct PyConfigSwapGuard {
+    ctx: Py<PyAny>,
+}
+
+impl PyConfigSwapGuard {
+    fn enter(_py: Python<'_>, ctx: &Bound<'_, PyAny>) -> PyResult<Self> {
+        ctx.call_method0("__enter__")?;
+        let ctx_obj: Py<PyAny> = ctx.clone().unbind();
+        Ok(Self { ctx: ctx_obj })
+    }
+}
+
+impl Drop for PyConfigSwapGuard {
+    fn drop(&mut self) {
+        Python::attach(|py| {
+            let ctx = self.ctx.bind(py);
+            let _ = ctx.call_method1("__exit__", (py.None(), py.None(), py.None()));
+        });
+    }
+}
+
+fn solve_reqs_rez(requirements: &[String]) -> Result<Vec<String>, SolverError> {
+    if requirements.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let filepaths = crate::config::get().map_err(|e| SolverError::BackendError {
+        backend: "rez".to_string(),
+        message: format!("failed to load rez config: {e}"),
+    })?;
+    let filepaths = filepaths
+        .filepaths
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+
+    let _ = Python::initialize();
+    Python::attach(|py| {
+        ensure_rez_on_sys_path(py).map_err(|e| SolverError::BackendError {
+            backend: "rez".to_string(),
+            message: format!("failed to set rez python path: {e}"),
+        })?;
+
+        let config_mod = py.import("rez.config").map_err(|e| SolverError::BackendError {
+            backend: "rez".to_string(),
+            message: format!("failed to import rez.config: {e}"),
+        })?;
+        let config_cls = config_mod.getattr("Config").map_err(|e| SolverError::BackendError {
+            backend: "rez".to_string(),
+            message: format!("failed to access rez.config.Config: {e}"),
+        })?;
+        let filepaths_py = PyList::new(py, &filepaths).map_err(|e| SolverError::BackendError {
+            backend: "rez".to_string(),
+            message: format!("failed to build rez config file list: {e}"),
+        })?;
+        let config_obj = config_cls
+            .call1((filepaths_py,))
+            .map_err(|e| SolverError::BackendError {
+                backend: "rez".to_string(),
+                message: format!("failed to create rez Config: {e}"),
+            })?;
+
+        let replace_ctx = config_mod
+            .getattr("_replace_config")
+            .map_err(|e| SolverError::BackendError {
+                backend: "rez".to_string(),
+                message: format!("failed to access rez.config._replace_config: {e}"),
+            })?
+            .call1((config_obj,))
+            .map_err(|e| SolverError::BackendError {
+                backend: "rez".to_string(),
+                message: format!("failed to start rez config swap: {e}"),
+            })?;
+        let _guard = PyConfigSwapGuard::enter(py, &replace_ctx).map_err(|e| {
+            SolverError::BackendError {
+                backend: "rez".to_string(),
+                message: format!("failed to enter rez config context: {e}"),
+            }
+        })?;
+
+        let resolved_context = py
+            .import("rez.resolved_context")
+            .map_err(|e| SolverError::BackendError {
+                backend: "rez".to_string(),
+                message: format!("failed to import rez.resolved_context: {e}"),
+            })?;
+        let ctx_cls = resolved_context
+            .getattr("ResolvedContext")
+            .map_err(|e| SolverError::BackendError {
+                backend: "rez".to_string(),
+                message: format!("failed to access ResolvedContext: {e}"),
+            })?;
+        let reqs_py = PyList::new(py, requirements).map_err(|e| SolverError::BackendError {
+            backend: "rez".to_string(),
+            message: format!("failed to build requirement list: {e}"),
+        })?;
+        let ctx = ctx_cls
+            .call1((reqs_py,))
+            .map_err(|e| SolverError::BackendError {
+                backend: "rez".to_string(),
+                message: format!("rez resolve failed to start: {e}"),
+            })?;
+
+        let success = ctx
+            .getattr("success")
+            .and_then(|v| v.extract::<bool>())
+            .map_err(|e| SolverError::BackendError {
+                backend: "rez".to_string(),
+                message: format!("failed to read rez resolve status: {e}"),
+            })?;
+
+        if !success {
+            let reason = ctx
+                .getattr("failure_description")
+                .ok()
+                .and_then(|val| if val.is_none() { None } else { val.extract::<String>().ok() })
+                .or_else(|| {
+                    ctx.getattr("status")
+                        .ok()
+                        .and_then(|s| s.getattr("name").ok())
+                        .and_then(|n| n.extract::<String>().ok())
+                })
+                .unwrap_or_else(|| "rez solver failed".to_string());
+            return Err(SolverError::NoSolution { reason });
+        }
+
+        let resolved = ctx
+            .getattr("resolved_packages")
+            .map_err(|e| SolverError::BackendError {
+                backend: "rez".to_string(),
+                message: format!("failed to read resolved packages: {e}"),
+            })?;
+
+        if resolved.is_none() {
+            return Err(SolverError::NoSolution {
+                reason: "rez resolve returned no packages".to_string(),
+            });
+        }
+
+        let resolved_list = resolved.cast::<PyList>().map_err(|e| SolverError::BackendError {
+            backend: "rez".to_string(),
+            message: format!("resolved packages is not a list: {e}"),
+        })?;
+
+        let mut out = Vec::with_capacity(resolved_list.len());
+        for item in resolved_list.iter() {
+            let name_attr = item
+                .getattr("qualified_package_name")
+                .or_else(|_| item.getattr("qualified_name"))
+                .map_err(|e| SolverError::BackendError {
+                    backend: "rez".to_string(),
+                    message: format!("failed to read resolved package name: {e}"),
+                })?;
+            let name = name_attr.extract::<String>().map_err(|e| SolverError::BackendError {
+                backend: "rez".to_string(),
+                message: format!("failed to decode resolved package name: {e}"),
+            })?;
+            out.push(name);
+        }
+
+        Ok(out)
+    })
+}
 
 /// Package index for solver.
 ///

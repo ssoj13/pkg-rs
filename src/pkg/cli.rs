@@ -1,6 +1,6 @@
 //! CLI definitions for pkg command.
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use clap_complete::Shell as CompletionShell;
 use std::path::PathBuf;
 
@@ -33,7 +33,7 @@ pub struct Cli {
     #[arg(short = 'l', long = "log", global = true)]
     pub log_file: Option<Option<PathBuf>>,
 
-    /// Config file override (TOML)
+    /// Config file override (Rez config .py/.yaml)
     #[arg(long = "cfg", global = true)]
     pub cfg: Option<PathBuf>,
 
@@ -51,6 +51,116 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub command: Option<Commands>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct EnvArgs {
+    /// Package name(s)
+    #[arg(required = true)]
+    pub(crate) packages: Vec<String>,
+    /// Command to run (after --)
+    #[arg(last = true)]
+    pub(crate) command: Vec<String>,
+    /// Environment name (default: "default")
+    #[arg(long)]
+    pub(crate) env_name: Option<String>,
+    /// Output format: shell, json, export, set
+    #[arg(short, long, default_value = "shell")]
+    pub(crate) format: String,
+    /// Expand {TOKEN} references in values (default: true)
+    #[arg(short, long, default_value = "true", action = clap::ArgAction::Set)]
+    pub(crate) expand: bool,
+    /// Write to file
+    #[arg(short, long)]
+    pub(crate) output: Option<PathBuf>,
+    /// Dry run (show what would happen)
+    #[arg(short = 'n', long)]
+    pub(crate) dry_run: bool,
+    /// Add PKG_* stamp variables for each resolved package
+    #[arg(short, long)]
+    pub(crate) stamp: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct BuildArgs {
+    /// Clear current build before rebuilding
+    #[arg(short = 'c', long)]
+    pub(crate) clean: bool,
+    /// Install the build to a package repository path
+    #[arg(short = 'i', long)]
+    pub(crate) install: bool,
+    /// Install to a custom package repository path
+    #[arg(short = 'p', long)]
+    pub(crate) prefix: Option<PathBuf>,
+    /// Build system to use (custom, make, cmake, cargo, python)
+    #[arg(short = 'b', long = "build-system")]
+    pub(crate) build_system: Option<String>,
+    /// Build process to use (local, central)
+    #[arg(long = "process", default_value = "local", value_parser = ["local", "central"])]
+    pub(crate) process: String,
+    /// Select variants to build (zero-indexed)
+    #[arg(long = "variants")]
+    pub(crate) variants: Vec<usize>,
+    /// Arguments to pass to the build system
+    #[arg(long = "build-args", allow_hyphen_values = true)]
+    pub(crate) build_args: Option<String>,
+    /// Arguments to pass to a child build system
+    #[arg(long = "child-build-args", allow_hyphen_values = true)]
+    pub(crate) child_build_args: Option<String>,
+    /// Create build scripts instead of running the build
+    #[arg(short = 's', long)]
+    pub(crate) scripts: bool,
+    /// Print preprocessed package definition and exit
+    #[arg(long = "view-pre")]
+    pub(crate) view_pre: bool,
+    /// Extra build args after --
+    #[arg(last = true)]
+    pub(crate) extra_args: Vec<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct PipArgs {
+    /// Package name, path, or URL to install
+    pub(crate) package: String,
+    /// Python version to use for pip (e.g., 3.11)
+    #[arg(long = "python-version")]
+    pub(crate) python_version: Option<String>,
+    /// Do not install dependencies
+    #[arg(long = "no-deps", conflicts_with = "min_deps")]
+    pub(crate) no_deps: bool,
+    /// Install minimal dependencies (default)
+    #[arg(long = "min-deps", conflicts_with = "no_deps")]
+    pub(crate) min_deps: bool,
+    /// Install the package (required)
+    #[arg(short = 'i', long)]
+    pub(crate) install: bool,
+    /// Install as released package
+    #[arg(long)]
+    pub(crate) release: bool,
+    /// Install to a custom package repository path
+    #[arg(short = 'p', long)]
+    pub(crate) prefix: Option<PathBuf>,
+    /// Extra args passed to pip install
+    #[arg(long = "extra")]
+    pub(crate) extra: Option<String>,
+    /// Extra pip args after --
+    #[arg(last = true)]
+    pub(crate) extra_args: Vec<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct RezConfigArgs {
+    /// Output dict/list field values as JSON
+    #[arg(long = "json")]
+    pub(crate) json: bool,
+    /// List config files searched
+    #[arg(long = "search-list")]
+    pub(crate) search_list: bool,
+    /// List config files sourced
+    #[arg(long = "source-list")]
+    pub(crate) source_list: bool,
+    /// Print value of a specific setting (dot path)
+    pub(crate) field: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -91,69 +201,10 @@ pub enum Commands {
     },
 
     /// Setup environment and optionally run command
-    Env {
-        /// Package name(s)
-        #[arg(required = true)]
-        packages: Vec<String>,
-        /// Command to run (after --)
-        #[arg(last = true)]
-        command: Vec<String>,
-        /// Environment name (default: "default")
-        #[arg(long)]
-        env_name: Option<String>,
-        /// Output format: shell, json, export, set
-        #[arg(short, long, default_value = "shell")]
-        format: String,
-        /// Expand {TOKEN} references in values (default: true)
-        #[arg(short, long, default_value = "true", action = clap::ArgAction::Set)]
-        expand: bool,
-        /// Write to file
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Dry run (show what would happen)
-        #[arg(short = 'n', long)]
-        dry_run: bool,
-        /// Add PKG_* stamp variables for each resolved package
-        #[arg(short, long)]
-        stamp: bool,
-    },
+    Env(EnvArgs),
 
     /// Build package in current directory
-    Build {
-        /// Clear current build before rebuilding
-        #[arg(short = 'c', long)]
-        clean: bool,
-        /// Install the build to a package repository path
-        #[arg(short = 'i', long)]
-        install: bool,
-        /// Install to a custom package repository path
-        #[arg(short = 'p', long)]
-        prefix: Option<PathBuf>,
-        /// Build system to use (custom, make, cmake, cargo, python)
-        #[arg(short = 'b', long = "build-system")]
-        build_system: Option<String>,
-        /// Build process to use (local, central)
-        #[arg(long = "process", default_value = "local", value_parser = ["local", "central"])]
-        process: String,
-        /// Select variants to build (zero-indexed)
-        #[arg(long = "variants")]
-        variants: Vec<usize>,
-        /// Arguments to pass to the build system
-        #[arg(long = "build-args")]
-        build_args: Option<String>,
-        /// Arguments to pass to a child build system
-        #[arg(long = "child-build-args")]
-        child_build_args: Option<String>,
-        /// Create build scripts instead of running the build
-        #[arg(short = 's', long)]
-        scripts: bool,
-        /// Print preprocessed package definition and exit
-        #[arg(long = "view-pre")]
-        view_pre: bool,
-        /// Extra build args after --
-        #[arg(last = true)]
-        extra_args: Vec<String>,
-    },
+    Build(BuildArgs),
 
     /// Spawn a build environment from build.rxt (internal)
     #[command(name = "build-env", hide = true)]
@@ -173,34 +224,11 @@ pub enum Commands {
     },
 
     /// Install a pip package into a repository
-    Pip {
-        /// Package name, path, or URL to install
-        package: String,
-        /// Python version to use for pip (e.g., 3.11)
-        #[arg(long = "python-version")]
-        python_version: Option<String>,
-        /// Do not install dependencies
-        #[arg(long = "no-deps", conflicts_with = "min_deps")]
-        no_deps: bool,
-        /// Install minimal dependencies (default)
-        #[arg(long = "min-deps", conflicts_with = "no_deps")]
-        min_deps: bool,
-        /// Install the package (required)
-        #[arg(short = 'i', long)]
-        install: bool,
-        /// Install as released package
-        #[arg(long)]
-        release: bool,
-        /// Install to a custom package repository path
-        #[arg(short = 'p', long)]
-        prefix: Option<PathBuf>,
-        /// Extra args passed to pip install
-        #[arg(long = "extra")]
-        extra: Option<String>,
-        /// Extra pip args after --
-        #[arg(last = true)]
-        extra_args: Vec<String>,
-    },
+    Pip(PipArgs),
+
+    /// Rez-compatible command group (rez env/build/pip/...)
+    #[command(name = "rez", subcommand)]
+    Rez(RezCommands),
 
     /// Show dependency graph
     Graph {
@@ -288,4 +316,106 @@ pub enum Commands {
     /// Launch graphical interface
     #[command(name = "gui")]
     Gui,
+}
+
+#[derive(Subcommand, Debug)]
+#[command(disable_help_subcommand = true)]
+pub(crate) enum RezCommands {
+    /// rez env
+    Env(EnvArgs),
+    /// rez build
+    Build(BuildArgs),
+    /// rez pip
+    Pip(PipArgs),
+    /// rez bind
+    #[command(name = "bind")]
+    Bind(RezStubArgs),
+    /// rez config
+    #[command(name = "config")]
+    Config(RezConfigArgs),
+    /// rez context
+    #[command(name = "context")]
+    Context(RezStubArgs),
+    /// rez cp
+    #[command(name = "cp")]
+    Cp(RezStubArgs),
+    /// rez depends
+    #[command(name = "depends")]
+    Depends(RezStubArgs),
+    /// rez diff
+    #[command(name = "diff")]
+    Diff(RezStubArgs),
+    /// rez gui
+    #[command(name = "gui")]
+    Gui(RezStubArgs),
+    /// rez help
+    #[command(name = "help")]
+    Help(RezStubArgs),
+    /// rez interpret
+    #[command(name = "interpret")]
+    Interpret(RezStubArgs),
+    /// rez memcache
+    #[command(name = "memcache")]
+    Memcache(RezStubArgs),
+    /// rez pkg-cache
+    #[command(name = "pkg-cache")]
+    PkgCache(RezStubArgs),
+    /// rez plugins
+    #[command(name = "plugins")]
+    Plugins(RezStubArgs),
+    /// rez python
+    #[command(name = "python")]
+    Python(RezStubArgs),
+    /// rez release
+    #[command(name = "release")]
+    Release(RezStubArgs),
+    /// rez search
+    #[command(name = "search")]
+    Search(RezStubArgs),
+    /// rez selftest
+    #[command(name = "selftest")]
+    Selftest(RezStubArgs),
+    /// rez status
+    #[command(name = "status")]
+    Status(RezStubArgs),
+    /// rez suite
+    #[command(name = "suite")]
+    Suite(RezStubArgs),
+    /// rez test
+    #[command(name = "test")]
+    Test(RezStubArgs),
+    /// rez view
+    #[command(name = "view")]
+    View(RezStubArgs),
+    /// rez yaml2py
+    #[command(name = "yaml2py")]
+    Yaml2py(RezStubArgs),
+    /// rez bundle
+    #[command(name = "bundle")]
+    Bundle(RezStubArgs),
+    /// rez benchmark
+    #[command(name = "benchmark")]
+    Benchmark(RezStubArgs),
+    /// rez pkg-ignore
+    #[command(name = "pkg-ignore")]
+    PkgIgnore(RezStubArgs),
+    /// rez mv
+    #[command(name = "mv")]
+    Mv(RezStubArgs),
+    /// rez rm
+    #[command(name = "rm")]
+    Rm(RezStubArgs),
+    /// rez _rez-complete (placeholder)
+    #[command(name = "_rez-complete")]
+    Complete(RezStubArgs),
+    /// rez _rez_fwd (placeholder)
+    #[command(name = "_rez_fwd")]
+    Forward(RezStubArgs),
+}
+
+#[derive(Args, Debug)]
+pub(crate) struct RezStubArgs {
+    /// Additional args passed to rez-* (not implemented yet)
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub(crate) args: Vec<String>,
 }

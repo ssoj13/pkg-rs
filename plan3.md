@@ -17,4 +17,4 @@ Implement full Rez parity in pkg-rs with modular crates and embedded Python runt
 9. Add parity test suite and reference fixtures.
 
 ## Current Status
-- Plan created. Awaiting approval to proceed with implementation.
+- Step 2 (Config parity) completed: Rez defaults in TOML, full PKG_/REZ_ env overrides + JSON overrides, package config overrides, repo alias sync.

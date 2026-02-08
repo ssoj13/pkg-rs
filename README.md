@@ -119,20 +119,41 @@ p.add_app(app)
 
 ## Configuration
 
-pkg can read a TOML config file named `pkg-rs.toml`. Search order:
+pkg uses Rez-compatible config loading via `rezconfig.py` (Python/YAML), with the
+same precedence and overrides as Rez.
 
-1. `--cfg <path>` (full override, error if missing)
-2. `PKG_RS_CONFIG` env var
-3. `pkg-rs.toml` next to the `pkg` binary
-4. `~/.pkg-rs/pkg-rs.toml`
+Config sources (low -> high priority):
+1. `rezconfig.py` in the pkg Python module root
+2. `REZ_CONFIG_FILE` list (paths separated by OS path separator)
+3. `~/.rezconfig` (skipped if `REZ_DISABLE_HOME_CONFIG=1`)
 
-If none are found, pkg creates a default config at `~/.pkg-rs/pkg-rs.toml`.
+`--cfg <path>` overrides `REZ_CONFIG_FILE` for this run.
 
-Minimal example:
+Env overrides (highest priority):
+1. `REZ_<KEY>` and JSON equivalents `REZ_<KEY>_JSON`
+2. Plugin settings under `plugins.*` are NOT overridden by env vars (Rez behavior)
 
-```toml
-[repos]
-paths = ["D:/packages", "D:/tools"]
+Value expansion:
+1. `${ENV}` for environment variables
+2. `{system.platform}`, `{system.os}`, `{system.arch}`, `{system.user}`, `{system.host}`
+3. `~` and `~/` for home dir
+
+Minimal example (`~/.rezconfig`):
+
+```python
+packages_path = ["D:/packages", "D:/tools"]
+local_packages_path = "D:/packages-local"
+release_packages_path = "//server/packages"
+```
+
+pkg-specific additions live under `plugins.pkg_rs.*` to preserve Rez schema. For example:
+
+```python
+plugins = {
+    "pkg_rs": {
+        "resolver_backend": "pkg",  # or "rez"
+    }
+}
 ```
 
 ## Package Structure
@@ -283,15 +304,18 @@ env.add(Evar("PATH", "{MAYA_ROOT}/bin", "append"))  # expands to C:/Maya/bin
 
 ### Package Locations
 
+pkg reads package roots from Rez config (rezconfig.py + REZ_CONFIG_FILE + ~/.rezconfig).
+Quick override via environment:
+
 ```powershell
 # Windows
-$env:PKG_LOCATIONS = "C:\packages;D:\studio\packages"
+$env:REZ_PACKAGES_PATH = "C:\packages;D:\studio\packages"
 
 # Linux
-export PKG_LOCATIONS="/opt/packages:/studio/packages"
+export REZ_PACKAGES_PATH="/opt/packages:/studio/packages"
 ```
 
-Default: `repo/` in current directory.
+Fallback: `repo/` in current directory if config paths are empty.
 
 ## Performance
 
@@ -366,7 +390,7 @@ Generate test packages for experimentation:
 
 ```powershell
 pkg gen-repo -n 200 -V 5 --dep-rate 0.4 -o ./test-repo
-$env:PKG_LOCATIONS = "./test-repo"
+$env:REZ_PACKAGES_PATH = "./test-repo"
 
 pkg list
 pkg env maya redshift -s

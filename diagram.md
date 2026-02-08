@@ -3,25 +3,48 @@
 ## Config Layering (Rez-Style)
 
 ```
-Defaults (rezconfig.py or pkg-rs defaults)
+Defaults (rezconfig.py)
   |
   v
-Config list (REZ_CONFIG_FILE / PKG_RS_CONFIG list)
+Config list (REZ_CONFIG_FILE list)
   |
   v
-Home config (~/.rezconfig / ~/.pkg-rs/pkg-rs.toml)
+Home config (~/.rezconfig, skip if REZ_DISABLE_HOME_CONFIG)
   |
   v
-Env overrides (REZ_* / PKG_*)
+Env overrides (REZ_*, plugins excluded)
   |
   v
-Env JSON overrides (REZ_*_JSON / PKG_*_JSON)
+Env JSON overrides (REZ_*_JSON)
   |
   v
 Package config section (build/release only)
   |
   v
-Effective Config
+Effective Config (Rez schema + plugins.pkg_rs.*)
+```
+
+## Embedded Python Layout
+
+```
+python/ (sys.path root)
+  |
+  +-- rez/         (rezconfig.py, resolved_context.py)
+  +-- rezplugins/  (build/shell/repo plugins)
+```
+
+## Rez Commands (Single Binary)
+
+```
+pkg binary
+  |
+  v
+subcommands
+  |
+  +-- env (pkg rez env) -> cmd_env
+  +-- build (pkg rez build) -> cmd_build
+  +-- pip (pkg rez pip) -> cmd_pip
+  +-- rez <cmd> stubs (parity TODO)
 ```
 
 ## Resolve -> Context Dataflow
@@ -30,9 +53,13 @@ Effective Config
 Package Requests + Filters + Orderers + Timestamp
   |
   v
-Solver/Resolver
-  |
-  v
+Backend Select (plugins.pkg_rs.resolver_backend)
+  |------------------------------|
+  v                              v
+Pkg Solver (PubGrub)       Rez Resolver (python)
+  |                              |
+  +--------------+---------------+
+                 v
 Resolved Packages + Variants
   |
   v
@@ -40,6 +67,68 @@ ResolvedContext (.rxt)
   |
   v
 Shell Env Output / Command Execution / Suite
+```
+
+## Env Pipeline (Current)
+
+```
+pkg env
+  |
+  v
+Resolve deps
+  |
+  v
+Package._env/default
+  |
+  v
+Stamp PKG_* -> Env.solve_impl
+  |
+  v
+Emit/commit env
+  |
+  v
+NOTE: pre/commands/post/pre_test are not executed.
+```
+
+## Env Pipeline (Target Rez Parity)
+
+```
+pkg env
+  |
+  v
+Resolve deps + variants
+  |
+  v
+ResolvedContext
+  |
+  v
+Execute pre/commands/post (rex) -> Env mutations
+  |
+  v
+Emit/commit env
+  |
+  v
+pre_test_commands + tests -> Test report
+```
+
+## Package Loader Commands Capture
+
+```
+package.py source
+  |
+  v
+Loader.execute_package_py
+  |
+  +--> Python exec (globals)
+  |       |
+  |       +--> Extract pre_build/pre/commands/post/pre_test
+  |             callable -> source
+  |             string/list -> text
+  |
+  +--> get_package() -> Package/dict
+  |
+  v
+Merge extracted commands into Package (if missing)
 ```
 
 ## Build Dataflow (Rez Parity)

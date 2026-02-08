@@ -31,16 +31,16 @@ packages/
 
 ## Package Locations
 
-Three ways to specify where packages live:
+Package locations are resolved in this order:
 
 ```powershell
 # 1. CLI flag (highest priority)
 pkg -r C:\packages list
 pkg --repo /opt/packages list
 
-# 2. Environment variable
-$env:PKG_LOCATIONS = "C:\pkg1;C:\pkg2"  # Windows
-export PKG_LOCATIONS="/opt/pkg1:/opt/pkg2"  # Linux
+# 2. rezconfig packages_path (override with REZ_PACKAGES_PATH)
+$env:REZ_PACKAGES_PATH = "C:\pkg1;C:\pkg2"  # Windows
+export REZ_PACKAGES_PATH="/opt/pkg1:/opt/pkg2"  # Linux
 
 # 3. Fallback: repo/ folder in current directory
 ```

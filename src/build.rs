@@ -9,6 +9,8 @@ use crate::dep::DepSpec;
 use crate::error::BuildError;
 use crate::{Env, Evar, Package, Storage};
 mod systems;
+mod msvc;
+use msvc::{ensure_msvc_env, MsvcEnvState};
 use systems::{BuildContext, BuildPhase, BuildSystemArgs, BuildSystemRegistry};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
@@ -260,7 +262,33 @@ pub fn build_package(
         let solved_env = env
             .solve_impl(10, true)
             .unwrap_or_else(|_| env.compress());
-        let env_map = solved_env.to_map();
+        let mut env_map = solved_env.to_map();
+        match ensure_msvc_env(&mut env_map) {
+            MsvcEnvState::Applied(report) => {
+                eprintln!(
+                    "Info: MSVC env applied (VS {}, tools {}, SDK {:?}, UCRT {:?}, host {}, target {})",
+                    report.vs_version,
+                    report.tools_version,
+                    report.sdk_version,
+                    report.ucrt_version,
+                    report.host,
+                    report.target
+                );
+            }
+            MsvcEnvState::Failed(err) => {
+                return Err(BuildError::Config(format!(
+                    "MSVC env bootstrap failed: {}",
+                    err
+                )));
+            }
+            MsvcEnvState::Skipped => {}
+        }
+        let script_env = Env::from_evars(
+            solved_env.name.clone(),
+            env_map
+                .iter()
+                .map(|(k, v)| Evar::set(k.clone(), v.clone())),
+        );
 
         write_build_rxt(
             &rxt_path,
@@ -274,7 +302,7 @@ pub fn build_package(
         if options.scripts {
             write_build_scripts(
                 &variant_build_path,
-                &solved_env,
+                &script_env,
                 &BuildEnvScriptMeta {
                     build_path: variant_build_path.clone(),
                     variant_index: variant.index,
@@ -470,37 +498,45 @@ fn resolve_install_path(
     package: &Package,
     build_type: BuildType,
 ) -> Result<PathBuf, BuildError> {
-    let config = crate::config::get().ok();
+    let base_config = crate::config::get().ok().cloned();
+    let config = if let (Some(base), Some(override_value)) =
+        (base_config.as_ref(), package.config.as_ref())
+    {
+        Some(
+            crate::config::apply_package_override(base, override_value)
+                .map_err(|e| BuildError::Config(e.to_string()))?,
+        )
+    } else {
+        base_config
+    };
     let config_paths = config
         .as_ref()
-        .map(|cfg| crate::config::repo_scan_paths(cfg))
+        .map(|cfg| crate::config::packages_path(cfg))
         .unwrap_or_default();
+    let release_path = config
+        .as_ref()
+        .and_then(|cfg| crate::config::release_packages_path(cfg));
+    let local_path = config
+        .as_ref()
+        .and_then(|cfg| crate::config::local_packages_path(cfg));
     let repo_root = if let Some(prefix) = prefix {
         prefix.clone()
     } else if build_type == BuildType::Central {
-        if let Some(cfg) = config.as_ref().and_then(|c| c.repos.release_path.as_ref()) {
-            cfg.clone()
+        if let Some(path) = release_path {
+            path
         } else if let Some(first) = config_paths.first() {
             first.clone()
-        } else if let Ok(path) = std::env::var("PKG_RELEASE_PATH") {
-            PathBuf::from(path)
         } else if let Some(first) = storage.location_paths().first() {
             first.clone()
-        } else if let Some(user_dir) = Storage::user_packages_dir() {
-            user_dir
         } else {
             return Err(BuildError::Config(
                 "no repository path available; use --prefix".to_string(),
             ));
         }
-    } else if let Some(cfg) = config.as_ref().and_then(|c| c.repos.local_path.as_ref()) {
-        cfg.clone()
+    } else if let Some(path) = local_path {
+        path
     } else if let Some(first) = config_paths.first() {
         first.clone()
-    } else if let Ok(path) = std::env::var("PKG_LOCAL_PATH") {
-        PathBuf::from(path)
-    } else if let Some(user_dir) = Storage::user_packages_dir() {
-        user_dir
     } else {
         return Err(BuildError::Config(
             "no repository path available; use --prefix".to_string(),

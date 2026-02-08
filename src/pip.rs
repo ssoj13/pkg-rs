@@ -869,10 +869,15 @@ struct PipInstallRemapConfig {
 }
 
 fn load_pip_install_remaps() -> Vec<PipInstallRemap> {
-    let configs = std::env::var("PKG_PIP_INSTALL_REMAPS")
-        .ok()
-        .and_then(|raw| serde_json::from_str::<Vec<PipInstallRemapConfig>>(&raw).ok())
-        .unwrap_or_else(default_pip_install_remaps);
+    let mut configs = None;
+
+    if let Ok(config) = crate::config::get() {
+        if let Some(value) = crate::config::get_json(config, "pip_install_remaps") {
+            configs = serde_json::from_value::<Vec<PipInstallRemapConfig>>(value).ok();
+        }
+    }
+
+    let configs = configs.unwrap_or_else(default_pip_install_remaps);
 
     let mut remaps = Vec::new();
     for cfg in configs {
@@ -950,7 +955,7 @@ fn map_record_path(
         }
 
         return Err(PipError::Config(format!(
-            "unknown RECORD path: {} (set PKG_PIP_INSTALL_REMAPS)",
+            "unknown RECORD path: {} (set plugins.pkg_rs.pip_install_remaps)",
             rel
         )));
     }
@@ -1560,12 +1565,15 @@ fn resolve_repo_root(
     let config = crate::config::get().ok();
     let config_paths = config
         .as_ref()
-        .map(|cfg| crate::config::repo_scan_paths(cfg))
+        .map(|cfg| crate::config::packages_path(cfg))
         .unwrap_or_default();
 
     if release {
-        if let Some(cfg) = config.as_ref().and_then(|c| c.repos.release_path.as_ref()) {
-            return Ok(cfg.clone());
+        if let Some(cfg) = config
+            .as_ref()
+            .and_then(|c| crate::config::release_packages_path(c))
+        {
+            return Ok(cfg);
         }
         if let Some(first) = config_paths.first() {
             return Ok(first.clone());
@@ -1575,8 +1583,11 @@ fn resolve_repo_root(
         }
     }
 
-    if let Some(cfg) = config.as_ref().and_then(|c| c.repos.local_path.as_ref()) {
-        return Ok(cfg.clone());
+    if let Some(cfg) = config
+        .as_ref()
+        .and_then(|c| crate::config::local_packages_path(c))
+    {
+        return Ok(cfg);
     }
     if let Some(first) = config_paths.first() {
         return Ok(first.clone());

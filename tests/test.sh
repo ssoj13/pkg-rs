@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PKG="$ROOT/target/release/pkg"
 TEST_DIR="$(dirname "$0")"
 REPO="$TEST_DIR/repo"
-REPO_BAD="$TEST_DIR/repo"
+REPO_BAD="$TEST_DIR/repo_bad"
 
 # Check if pkg exists
 if [ ! -f "$PKG" ]; then
@@ -48,10 +48,10 @@ run_gen() {
 }
 
 run_basic() {
-    export PKG_LOCATIONS="$REPO"
+    export REZ_PACKAGES_PATH="$REPO"
     
     echo "=== BASIC OPERATIONS TEST ==="
-    echo "Using: $PKG_LOCATIONS"
+    echo "Using: $REZ_PACKAGES_PATH"
     echo ""
     
     echo "1. Scan packages:"
@@ -79,10 +79,10 @@ run_basic() {
 }
 
 run_conflict() {
-    export PKG_LOCATIONS="$REPO_BAD"
+    export REZ_PACKAGES_PATH="$REPO_BAD"
     
     echo "=== DEPENDENCY RESOLUTION TEST ==="
-    echo "Using: $PKG_LOCATIONS"
+    echo "Using: $REZ_PACKAGES_PATH"
     echo ""
     
     echo "1. Available packages:"

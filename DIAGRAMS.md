@@ -4,12 +4,20 @@
 
 ```mermaid
 flowchart TD
-    A[Defaults] --> B[Config files list]
-    B --> C[Home config]
-    C --> D[Env overrides: PKG_*]
-    D --> E[Env overrides: PKG_*_JSON]
+    A[Defaults: rezconfig.py] --> B[Config files list: REZ_CONFIG_FILE]
+    B --> C[Home config: ~/.rezconfig]
+    C --> D[Env overrides: REZ_*]
+    D --> E[Env overrides JSON: REZ_*_JSON]
     E --> F[Package config section (build/release)]
-    F --> G[Effective Config]
+    F --> G[Effective Config + plugins.pkg_rs.*]
+```
+
+## Embedded Python Layout
+
+```mermaid
+flowchart TD
+    ROOT[python/ sys.path root] --> REZ[rez/ (rezconfig, resolver)]
+    ROOT --> PLUGINS[rezplugins/ (build/shell/repo plugins)]
 ```
 
 ## CLI Command Routing
@@ -31,13 +39,65 @@ flowchart LR
     LIST --> STORAGE[Storage Scan]
 ```
 
+## Rez Commands (Single Binary)
+
+```mermaid
+flowchart TD
+    PKG[pkg binary] --> SUB[subcommands]
+    SUB --> ENV[env (pkg rez env) -> cmd_env]
+    SUB --> BUILD[build (pkg rez build) -> cmd_build]
+    SUB --> PIP[pip (pkg rez pip) -> cmd_pip]
+    SUB --> STUB[rez <cmd> stubs]
+```
+
+## Env Pipeline (Current)
+
+```mermaid
+flowchart TD
+    CLI[pkg env] --> PKG[Resolve package(s)]
+    PKG --> SOLVE[Solve deps]
+    SOLVE --> ENV[Package._env/default]
+    ENV --> STAMP[Stamp PKG_* vars]
+    STAMP --> EXPAND[Env.solve_impl]
+    EXPAND --> OUT[Emit/commit env]
+    PKG -. commands ignored .-> OUT
+```
+
+## Env Pipeline (Target Rez Parity)
+
+```mermaid
+flowchart TD
+    CLI[pkg env] --> RESOLVE[Resolve deps + variants]
+    RESOLVE --> CTX[ResolvedContext]
+    CTX --> REX[Execute pre/commands/post (rex)]
+    REX --> ENV[Env mutations]
+    ENV --> OUT[Emit/commit env]
+    CTX --> TESTS[pre_test + tests]
+    TESTS --> REPORT[Test report]
+```
+
+## Package Loader Command Capture
+
+```mermaid
+flowchart TD
+    SRC[package.py source] --> EXEC[Python exec globals]
+    EXEC --> GET[get_package()]
+    EXEC --> EXTRACT[Extract command sources]
+    EXTRACT --> MERGE[Merge into Package if missing]
+    GET --> PKG[Package/dict]
+    PKG --> MERGE
+```
+
 ## Resolve + Context Pipeline
 
 ```mermaid
 flowchart TD
     REQ[Package Requests] --> FILTERS[Filters + Orderers + Timestamp]
-    FILTERS --> SOLVER[Resolver/Solver]
-    SOLVER --> CTX[ResolvedContext]
+    FILTERS --> SELECT[Backend Select]
+    SELECT --> PKG[Pkg Solver (PubGrub)]
+    SELECT --> REZ[Rez Resolver (python)]
+    PKG --> CTX[ResolvedContext]
+    REZ --> CTX
     CTX --> SHELL[Shell Env Output]
     CTX --> RXT[.rxt Serialization]
     CTX --> EXEC[Command Execution]

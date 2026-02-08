@@ -108,7 +108,7 @@ use crate::evar::{Action, Evar};
 use crate::package::Package;
 use log::{debug, trace};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::types::{PyDict, PyList, PyTuple};
 use std::ffi::CString;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -235,7 +235,7 @@ impl Loader {
         self.load_impl(path, &[], &HashMap::new())
     }
 
-    fn extract_pre_build_commands_from_code(&self, code: &str) -> Option<String> {
+    fn extract_pre_build_commands_from_code(&self, code: &str, func_name: &str) -> Option<String> {
         let mut lines = code.lines();
         let mut captured = Vec::new();
         let mut in_block = false;
@@ -244,8 +244,9 @@ impl Loader {
         while let Some(line) = lines.next() {
             let trimmed = line.trim_start();
             if !in_block {
-                if trimmed.starts_with("def pre_build_commands")
-                    || trimmed.starts_with("async def pre_build_commands")
+                let def_prefix = format!("def {}", func_name);
+                let async_def_prefix = format!("async def {}", func_name);
+                if trimmed.starts_with(&def_prefix) || trimmed.starts_with(&async_def_prefix)
                 {
                     base_indent = line.len() - trimmed.len();
                     captured.push(line);
@@ -332,12 +333,23 @@ impl Loader {
         debug!("Loader: executing {}", path.display());
         trace!("Loader: code length={} args={:?} kwargs={:?}", code.len(), args, kwargs);
 
-        let pre_build_fallback = self.extract_pre_build_commands_from_code(code);
+        let pre_build_fallback =
+            self.extract_pre_build_commands_from_code(code, "pre_build_commands");
+        let pre_commands_fallback = self.extract_pre_build_commands_from_code(code, "pre_commands");
+        let commands_fallback = self.extract_pre_build_commands_from_code(code, "commands");
+        let post_commands_fallback =
+            self.extract_pre_build_commands_from_code(code, "post_commands");
+        let pre_test_fallback =
+            self.extract_pre_build_commands_from_code(code, "pre_test_commands");
 
         Python::attach(|py| {
             // Create execution globals with injected classes
             trace!("Loader: creating Python globals");
             let globals = self.create_globals(py, path)?;
+            crate::py::ensure_rez_on_sys_path(py).map_err(|e| LoaderError::ExecutionError {
+                path: path.to_path_buf(),
+                reason: format!("Failed to set rez python path: {e}"),
+            })?;
 
             // Execute the code using CString
             let code_cstr = CString::new(code.as_bytes()).map_err(|e| {
@@ -355,8 +367,20 @@ impl Loader {
             }
 
             let pre_build_commands = self
-                .extract_pre_build_commands(py, &globals)
+                .extract_pre_build_commands(py, &globals, "pre_build_commands")
                 .or(pre_build_fallback);
+            let pre_commands = self
+                .extract_pre_build_commands(py, &globals, "pre_commands")
+                .or(pre_commands_fallback);
+            let commands = self
+                .extract_pre_build_commands(py, &globals, "commands")
+                .or(commands_fallback);
+            let post_commands = self
+                .extract_pre_build_commands(py, &globals, "post_commands")
+                .or(post_commands_fallback);
+            let pre_test_commands = self
+                .extract_pre_build_commands(py, &globals, "pre_test_commands")
+                .or(pre_test_fallback);
 
             // Get get_package function
             let get_package = globals.get_item("get_package").map_err(|_e| {
@@ -398,6 +422,18 @@ impl Loader {
             let mut pkg = self.extract_package(py, &result, path)?;
             if pkg.pre_build_commands.is_none() {
                 pkg.pre_build_commands = pre_build_commands;
+            }
+            if pkg.pre_commands.is_none() {
+                pkg.pre_commands = pre_commands;
+            }
+            if pkg.commands.is_none() {
+                pkg.commands = commands;
+            }
+            if pkg.post_commands.is_none() {
+                pkg.post_commands = post_commands;
+            }
+            if pkg.pre_test_commands.is_none() {
+                pkg.pre_test_commands = pre_test_commands;
             }
             Ok(pkg)
         })
@@ -489,21 +525,37 @@ impl Loader {
         Ok(globals)
     }
 
-    /// Extract Rez-style pre_build_commands source if present.
+    /// Extract Rez-style command source if present.
     fn extract_pre_build_commands(
         &self,
         py: Python<'_>,
         globals: &Bound<'_, PyDict>,
+        func_name: &str,
     ) -> Option<String> {
-        let func = globals.get_item("pre_build_commands").ok()??;
-        if !func.is_callable() {
-            return None;
+        let func = globals.get_item(func_name).ok()??;
+        if func.is_callable() {
+            let inspect = py.import("inspect").ok()?;
+            let getsource = inspect.getattr("getsource").ok()?;
+            let source = getsource.call1((func,)).ok()?;
+            return source.extract::<String>().ok();
         }
 
-        let inspect = py.import("inspect").ok()?;
-        let getsource = inspect.getattr("getsource").ok()?;
-        let source = getsource.call1((func,)).ok()?;
-        source.extract::<String>().ok()
+        if let Ok(text) = func.extract::<String>() {
+            return Some(text);
+        }
+        if let Ok(items) = func.extract::<Vec<String>>() {
+            return Some(items.join("\n"));
+        }
+        if let Ok(list) = func.cast::<PyList>() {
+            let mut items = Vec::new();
+            for item in list.iter() {
+                let item: String = item.extract().ok()?;
+                items.push(item);
+            }
+            return Some(items.join("\n"));
+        }
+
+        None
     }
 
     /// Extract Package from Python object.

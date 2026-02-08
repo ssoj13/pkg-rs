@@ -12,5 +12,5 @@ Command-line interface for pkg-rs. Provides environment setup, package inspectio
 ## Current Status
 - Build command supports Rez-style build variables, variants, hashed variants, `pre_build_commands`, and modular build systems (`custom`, `make`, `cmake`, `cargo`, `python`).
 - Pip command matches rez-pip install layout (dist-info parsing, entry-point wrappers, hashed variants) and bundles dependencies when multiple dist-info are present.
-- Repo configuration is available via `pkg-rs.toml` for scan paths and install targets.
+- Repo configuration follows Rez config (`rezconfig.py`, `REZ_CONFIG_FILE`, `~/.rezconfig`) for scan paths and install targets.
 - Some Rez-only flows (rezified pip/python context, release hooks, suite context) are not implemented.

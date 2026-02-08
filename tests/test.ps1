@@ -52,10 +52,10 @@ function Run-Gen {
 }
 
 function Run-Basic {
-    $env:PKG_LOCATIONS = $Repo
+    $env:REZ_PACKAGES_PATH = $Repo
     
     Write-Host "=== BASIC OPERATIONS TEST ===" -ForegroundColor Green
-    Write-Host "Using: $env:PKG_LOCATIONS"
+    Write-Host "Using: $env:REZ_PACKAGES_PATH"
     Write-Host ""
     
     Write-Host "1. Scan packages:" -ForegroundColor Yellow
@@ -76,10 +76,10 @@ function Run-Basic {
 }
 
 function Run-Conflict {
-    $env:PKG_LOCATIONS = $RepoBad
+    $env:REZ_PACKAGES_PATH = $RepoBad
     
     Write-Host "=== DEPENDENCY RESOLUTION TEST ===" -ForegroundColor Green
-    Write-Host "Using: $env:PKG_LOCATIONS"
+    Write-Host "Using: $env:REZ_PACKAGES_PATH"
     Write-Host ""
     
     Write-Host "1. Available packages:" -ForegroundColor Yellow

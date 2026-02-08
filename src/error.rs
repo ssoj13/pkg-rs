@@ -261,6 +261,22 @@ pub enum SolverError {
         /// Missing version
         version: String,
     },
+
+    /// Unsupported solver backend
+    #[error("unsupported solver backend: {backend}")]
+    UnsupportedBackend {
+        /// Backend name
+        backend: String,
+    },
+
+    /// Backend execution error
+    #[error("{backend} solver error: {message}")]
+    BackendError {
+        /// Backend name
+        backend: String,
+        /// Error message
+        message: String,
+    },
 }
 
 /// Errors from the build pipeline.

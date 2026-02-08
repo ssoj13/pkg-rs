@@ -115,9 +115,11 @@ use crate::build_command::BuildCommand;
 use crate::env::Env;
 use crate::error::PackageError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use pyo3::conversion::IntoPyObject;
+use pyo3::types::{PyAny, PyBool, PyDict, PyList, PyTuple};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashSet};
 
 /// Status of package dependency resolution.
 #[pyclass(eq, eq_int)]
@@ -178,7 +180,7 @@ impl SolveStatus {
 /// - `reqs`: Dependency requirements (version constraints)
 /// - `deps`: Resolved dependencies (concrete versions, populated by solver)
 #[pyclass]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Package {
     /// Full package name: `{base}-{version}`.
     /// Auto-computed from base and version.
@@ -223,6 +225,16 @@ pub struct Package {
     #[serde(default)]
     pub private_build_requires: Vec<String>,
 
+    /// True if this package provides plugins.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_plugins: Option<bool>,
+
+    /// Packages this is a plugin for.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plugin_for: Vec<String>,
+
     /// Build system name (custom/make/cmake).
     #[pyo3(get, set)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -248,6 +260,30 @@ pub struct Package {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pre_build_commands: Option<String>,
 
+    /// Commands executed before environment setup.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pre_commands: Option<String>,
+
+    /// Commands executed during environment setup.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commands: Option<String>,
+
+    /// Commands executed after environment setup.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post_commands: Option<String>,
+
+    /// Commands executed before tests.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pre_test_commands: Option<String>,
+
+    /// Package config overrides (Rez-style `config` dict).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<toml::Value>,
+
     /// Variant requirements (each entry is a list of requirements).
     #[pyo3(get, set)]
     #[serde(default)]
@@ -257,6 +293,16 @@ pub struct Package {
     #[pyo3(get, set)]
     #[serde(default)]
     pub hashed_variants: bool,
+
+    /// Optional relocatable flag (Rez parity).
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relocatable: Option<bool>,
+
+    /// Optional cachable flag (Rez parity).
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cachable: Option<bool>,
 
     /// Resolved dependencies (full Package objects).
     /// Populated by the solver after successful resolution.
@@ -271,6 +317,11 @@ pub struct Package {
     /// Common tags: "dcc", "render", "adobe", "autodesk", "vfx", etc.
     #[pyo3(get, set)]
     pub tags: Vec<String>,
+
+    /// Unique package UUID.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uuid: Option<String>,
 
     /// Path to package icon (relative to package root or absolute).
     #[pyo3(get, set)]
@@ -291,10 +342,13 @@ pub struct Package {
     #[serde(default)]
     pub is_pure_python: bool,
 
-    /// Help links (pairs of label/url).
-    #[pyo3(get, set)]
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub help: Vec<Vec<String>>,
+    /// Help entries (Rez-style `help` schema).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help: Option<toml::Value>,
+
+    /// Tests metadata (Rez-style `tests` schema).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tests: Option<toml::Value>,
 
     /// Authors list.
     #[pyo3(get, set)]
@@ -305,6 +359,39 @@ pub struct Package {
     #[pyo3(get, set)]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tools: Vec<String>,
+
+    /// Package timestamp (Unix epoch seconds).
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<i64>,
+
+    /// Package revision metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<toml::Value>,
+
+    /// Package changelog text.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changelog: Option<String>,
+
+    /// Release message.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_message: Option<String>,
+
+    /// Previous version reference.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_version: Option<String>,
+
+    /// Previous revision metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_revision: Option<toml::Value>,
+
+    /// VCS identifier.
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vcs: Option<String>,
 
     /// Status of dependency resolution.
     #[pyo3(get)]
@@ -321,6 +408,10 @@ pub struct Package {
     #[pyo3(get, set)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_source: Option<String>,
+
+    /// Extra arbitrary keys (Rez parity).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub extras: BTreeMap<String, toml::Value>,
 }
 
 #[pymethods]
@@ -349,25 +440,44 @@ impl Package {
             reqs: Vec::new(),
             build_requires: Vec::new(),
             private_build_requires: Vec::new(),
+            has_plugins: None,
+            plugin_for: Vec::new(),
             build_system: None,
             build_command: None,
             build_directory: None,
             build_args: Vec::new(),
             pre_build_commands: None,
+            pre_commands: None,
+            commands: None,
+            post_commands: None,
+            pre_test_commands: None,
+            config: None,
             variants: Vec::new(),
             hashed_variants: false,
+            relocatable: None,
+            cachable: None,
             deps: Vec::new(),
             tags: Vec::new(),
+            uuid: None,
             icon: None,
             pip_name: None,
             from_pip: false,
             is_pure_python: false,
-            help: Vec::new(),
+            help: None,
+            tests: None,
             authors: Vec::new(),
             tools: Vec::new(),
+            timestamp: None,
+            revision: None,
+            changelog: None,
+            release_message: None,
+            previous_version: None,
+            previous_revision: None,
+            vcs: None,
             solve_status: SolveStatus::NotSolved,
             solve_error: None,
             package_source: None,
+            extras: BTreeMap::new(),
         }
     }
 
@@ -378,6 +488,71 @@ impl Package {
     pub fn set_version(&mut self, version: String) {
         self.version = version;
         self.name = format!("{}-{}", self.base, self.version);
+    }
+
+    /// Get package config overrides (Rez-style `config` dict).
+    #[getter]
+    pub fn config(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        toml_option_to_py(py, &self.config)
+    }
+
+    /// Set package config overrides (Rez-style `config` dict).
+    #[setter]
+    pub fn set_config(&mut self, value: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+        self.config = py_to_toml_option(value)?;
+        Ok(())
+    }
+
+    /// Get help metadata (Rez-style `help` schema).
+    #[getter]
+    pub fn help(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        toml_option_to_py(py, &self.help)
+    }
+
+    /// Set help metadata (Rez-style `help` schema).
+    #[setter]
+    pub fn set_help(&mut self, value: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+        self.help = py_to_toml_option(value)?;
+        Ok(())
+    }
+
+    /// Get tests metadata (Rez-style `tests` schema).
+    #[getter]
+    pub fn tests(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        toml_option_to_py(py, &self.tests)
+    }
+
+    /// Set tests metadata (Rez-style `tests` schema).
+    #[setter]
+    pub fn set_tests(&mut self, value: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+        self.tests = py_to_toml_option(value)?;
+        Ok(())
+    }
+
+    /// Get revision metadata.
+    #[getter]
+    pub fn revision(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        toml_option_to_py(py, &self.revision)
+    }
+
+    /// Set revision metadata.
+    #[setter]
+    pub fn set_revision(&mut self, value: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+        self.revision = py_to_toml_option(value)?;
+        Ok(())
+    }
+
+    /// Get previous revision metadata.
+    #[getter]
+    pub fn previous_revision(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        toml_option_to_py(py, &self.previous_revision)
+    }
+
+    /// Set previous revision metadata.
+    #[setter]
+    pub fn set_previous_revision(&mut self, value: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+        self.previous_revision = py_to_toml_option(value)?;
+        Ok(())
     }
 
     /// Add an environment to the package.
@@ -618,25 +793,69 @@ impl Package {
         dict.set_item("reqs", PyList::new(py, &self.reqs)?)?;
         dict.set_item("build_requires", PyList::new(py, &self.build_requires)?)?;
         dict.set_item("private_build_requires", PyList::new(py, &self.private_build_requires)?)?;
+        dict.set_item("has_plugins", &self.has_plugins)?;
+        dict.set_item("plugin_for", PyList::new(py, &self.plugin_for)?)?;
         dict.set_item("build_system", &self.build_system)?;
         dict.set_item("build_command", self.build_command.clone())?;
         dict.set_item("build_directory", &self.build_directory)?;
         dict.set_item("build_args", PyList::new(py, &self.build_args)?)?;
         dict.set_item("pre_build_commands", &self.pre_build_commands)?;
+        dict.set_item("pre_commands", &self.pre_commands)?;
+        dict.set_item("commands", &self.commands)?;
+        dict.set_item("post_commands", &self.post_commands)?;
+        dict.set_item("pre_test_commands", &self.pre_test_commands)?;
+        if let Some(config_value) = &self.config {
+            dict.set_item("config", toml_to_py(py, config_value)?)?;
+        } else {
+            dict.set_item("config", py.None())?;
+        }
         dict.set_item("variants", PyList::new(py, &self.variants)?)?;
         dict.set_item("hashed_variants", &self.hashed_variants)?;
+        dict.set_item("relocatable", &self.relocatable)?;
+        dict.set_item("cachable", &self.cachable)?;
         let dep_names: Vec<&str> = self.deps.iter().map(|d| d.name.as_str()).collect();
         dict.set_item("deps", PyList::new(py, &dep_names)?)?;
 
         // Tags and icon
         dict.set_item("tags", PyList::new(py, &self.tags)?)?;
+        dict.set_item("uuid", &self.uuid)?;
         dict.set_item("icon", &self.icon)?;
         dict.set_item("pip_name", &self.pip_name)?;
         dict.set_item("from_pip", &self.from_pip)?;
         dict.set_item("is_pure_python", &self.is_pure_python)?;
-        dict.set_item("help", PyList::new(py, &self.help)?)?;
+        if let Some(help_value) = &self.help {
+            dict.set_item("help", toml_to_py(py, help_value)?)?;
+        } else {
+            dict.set_item("help", py.None())?;
+        }
+        if let Some(tests_value) = &self.tests {
+            dict.set_item("tests", toml_to_py(py, tests_value)?)?;
+        } else {
+            dict.set_item("tests", py.None())?;
+        }
         dict.set_item("authors", PyList::new(py, &self.authors)?)?;
         dict.set_item("tools", PyList::new(py, &self.tools)?)?;
+        dict.set_item("timestamp", &self.timestamp)?;
+        if let Some(revision_value) = &self.revision {
+            dict.set_item("revision", toml_to_py(py, revision_value)?)?;
+        } else {
+            dict.set_item("revision", py.None())?;
+        }
+        dict.set_item("changelog", &self.changelog)?;
+        dict.set_item("release_message", &self.release_message)?;
+        dict.set_item("previous_version", &self.previous_version)?;
+        if let Some(previous_revision_value) = &self.previous_revision {
+            dict.set_item("previous_revision", toml_to_py(py, previous_revision_value)?)?;
+        } else {
+            dict.set_item("previous_revision", py.None())?;
+        }
+        dict.set_item("vcs", &self.vcs)?;
+
+        for (key, value) in &self.extras {
+            if dict.get_item(key)?.is_none() {
+                dict.set_item(key, toml_to_py(py, value)?)?;
+            }
+        }
 
         Ok(dict.into())
     }
@@ -691,6 +910,13 @@ impl Package {
             let private_reqs: Vec<String> = private_reqs_obj.extract()?;
             pkg.private_build_requires = private_reqs;
         }
+        if let Some(has_plugins_obj) = dict.get_item("has_plugins")? {
+            pkg.has_plugins = has_plugins_obj.extract::<Option<bool>>()?;
+        }
+        if let Some(plugin_for_obj) = dict.get_item("plugin_for")? {
+            let plugin_for: Vec<String> = plugin_for_obj.extract()?;
+            pkg.plugin_for = plugin_for;
+        }
         if let Some(build_system_obj) = dict.get_item("build_system")? {
             pkg.build_system = build_system_obj.extract::<Option<String>>()?;
         }
@@ -705,7 +931,24 @@ impl Package {
             pkg.build_args = build_args;
         }
         if let Some(pre_build_obj) = dict.get_item("pre_build_commands")? {
-            pkg.pre_build_commands = pre_build_obj.extract::<Option<String>>()?;
+            pkg.pre_build_commands = extract_commands_value(&pre_build_obj)?;
+        }
+        if let Some(pre_commands_obj) = dict.get_item("pre_commands")? {
+            pkg.pre_commands = extract_commands_value(&pre_commands_obj)?;
+        }
+        if let Some(commands_obj) = dict.get_item("commands")? {
+            pkg.commands = extract_commands_value(&commands_obj)?;
+        }
+        if let Some(post_commands_obj) = dict.get_item("post_commands")? {
+            pkg.post_commands = extract_commands_value(&post_commands_obj)?;
+        }
+        if let Some(pre_test_obj) = dict.get_item("pre_test_commands")? {
+            pkg.pre_test_commands = extract_commands_value(&pre_test_obj)?;
+        }
+        if let Some(config_obj) = dict.get_item("config")? {
+            if !config_obj.is_none() {
+                pkg.config = Some(py_to_toml(&config_obj)?);
+            }
         }
         if let Some(variants_obj) = dict.get_item("variants")? {
             let variants: Vec<Vec<String>> = variants_obj.extract()?;
@@ -713,6 +956,12 @@ impl Package {
         }
         if let Some(hashed_obj) = dict.get_item("hashed_variants")? {
             pkg.hashed_variants = hashed_obj.extract::<bool>()?;
+        }
+        if let Some(relocatable_obj) = dict.get_item("relocatable")? {
+            pkg.relocatable = relocatable_obj.extract::<Option<bool>>()?;
+        }
+        if let Some(cachable_obj) = dict.get_item("cachable")? {
+            pkg.cachable = cachable_obj.extract::<Option<bool>>()?;
         }
 
         // Deps - skip, they're populated by solve()
@@ -722,6 +971,10 @@ impl Package {
         if let Some(tags_obj) = dict.get_item("tags")? {
             let tags: Vec<String> = tags_obj.extract()?;
             pkg.tags = tags;
+        }
+
+        if let Some(uuid_obj) = dict.get_item("uuid")? {
+            pkg.uuid = uuid_obj.extract::<Option<String>>()?;
         }
 
         // Icon
@@ -739,8 +992,14 @@ impl Package {
             pkg.is_pure_python = is_pure_obj.extract::<bool>()?;
         }
         if let Some(help_obj) = dict.get_item("help")? {
-            let help: Vec<Vec<String>> = help_obj.extract()?;
-            pkg.help = help;
+            if !help_obj.is_none() {
+                pkg.help = Some(py_to_toml(&help_obj)?);
+            }
+        }
+        if let Some(tests_obj) = dict.get_item("tests")? {
+            if !tests_obj.is_none() {
+                pkg.tests = Some(py_to_toml(&tests_obj)?);
+            }
         }
         if let Some(authors_obj) = dict.get_item("authors")? {
             let authors: Vec<String> = authors_obj.extract()?;
@@ -749,6 +1008,96 @@ impl Package {
         if let Some(tools_obj) = dict.get_item("tools")? {
             let tools: Vec<String> = tools_obj.extract()?;
             pkg.tools = tools;
+        }
+        if let Some(timestamp_obj) = dict.get_item("timestamp")? {
+            pkg.timestamp = timestamp_obj.extract::<Option<i64>>()?;
+        }
+        if let Some(revision_obj) = dict.get_item("revision")? {
+            if !revision_obj.is_none() {
+                pkg.revision = Some(py_to_toml(&revision_obj)?);
+            }
+        }
+        if let Some(changelog_obj) = dict.get_item("changelog")? {
+            pkg.changelog = changelog_obj.extract::<Option<String>>()?;
+        }
+        if let Some(release_message_obj) = dict.get_item("release_message")? {
+            pkg.release_message = release_message_obj.extract::<Option<String>>()?;
+        }
+        if let Some(previous_version_obj) = dict.get_item("previous_version")? {
+            pkg.previous_version = previous_version_obj.extract::<Option<String>>()?;
+        }
+        if let Some(previous_revision_obj) = dict.get_item("previous_revision")? {
+            if !previous_revision_obj.is_none() {
+                pkg.previous_revision = Some(py_to_toml(&previous_revision_obj)?);
+            }
+        }
+        if let Some(vcs_obj) = dict.get_item("vcs")? {
+            pkg.vcs = vcs_obj.extract::<Option<String>>()?;
+        }
+        if let Some(source_obj) = dict.get_item("package_source")? {
+            pkg.package_source = source_obj.extract::<Option<String>>()?;
+        }
+
+        let known_keys = [
+            "name",
+            "base",
+            "version",
+            "description",
+            "envs",
+            "apps",
+            "reqs",
+            "build_requires",
+            "private_build_requires",
+            "has_plugins",
+            "plugin_for",
+            "build_system",
+            "build_command",
+            "build_directory",
+            "build_args",
+            "pre_build_commands",
+            "pre_commands",
+            "commands",
+            "post_commands",
+            "pre_test_commands",
+            "config",
+            "variants",
+            "hashed_variants",
+            "relocatable",
+            "cachable",
+            "deps",
+            "tags",
+            "uuid",
+            "icon",
+            "pip_name",
+            "from_pip",
+            "is_pure_python",
+            "help",
+            "tests",
+            "authors",
+            "tools",
+            "timestamp",
+            "revision",
+            "changelog",
+            "release_message",
+            "previous_version",
+            "previous_revision",
+            "vcs",
+            "solve_status",
+            "solve_error",
+            "package_source",
+        ];
+        let known: HashSet<&str> = known_keys.iter().copied().collect();
+        for (key, value) in dict.iter() {
+            let key: String = key.extract().map_err(|_| {
+                pyo3::exceptions::PyTypeError::new_err("package dict keys must be strings")
+            })?;
+            if known.contains(key.as_str()) {
+                continue;
+            }
+            if value.is_none() {
+                continue;
+            }
+            pkg.extras.insert(key, py_to_toml(&value)?);
         }
 
         Ok(pkg)
@@ -822,11 +1171,140 @@ impl Package {
     }
 }
 
+fn toml_to_py(py: Python<'_>, value: &toml::Value) -> PyResult<Py<PyAny>> {
+    match value {
+        toml::Value::String(s) => Ok(s.into_pyobject(py)?.into()),
+        toml::Value::Integer(v) => Ok(v.into_pyobject(py)?.into()),
+        toml::Value::Float(v) => Ok(v.into_pyobject(py)?.into()),
+        toml::Value::Boolean(v) => {
+            let obj: Py<PyBool> = PyBool::new(py, *v).into();
+            Ok(obj.into())
+        },
+        toml::Value::Datetime(v) => Ok(v.to_string().into_pyobject(py)?.into()),
+        toml::Value::Array(values) => {
+            let list = PyList::empty(py);
+            for item in values {
+                list.append(toml_to_py(py, item)?)?;
+            }
+            Ok(list.into())
+        }
+        toml::Value::Table(values) => {
+            let dict = PyDict::new(py);
+            for (key, item) in values {
+                dict.set_item(key, toml_to_py(py, item)?)?;
+            }
+            Ok(dict.into())
+        }
+    }
+}
+
+fn toml_option_to_py(
+    py: Python<'_>,
+    value: &Option<toml::Value>,
+) -> PyResult<Option<Py<PyAny>>> {
+    match value {
+        Some(value) => Ok(Some(toml_to_py(py, value)?)),
+        None => Ok(None),
+    }
+}
+
+fn py_to_toml(value: &Bound<'_, PyAny>) -> PyResult<toml::Value> {
+    if value.is_none() {
+        return Err(pyo3::exceptions::PyTypeError::new_err(
+            "config values cannot be None",
+        ));
+    }
+
+    if let Ok(v) = value.extract::<bool>() {
+        return Ok(toml::Value::Boolean(v));
+    }
+    if let Ok(v) = value.extract::<i64>() {
+        return Ok(toml::Value::Integer(v));
+    }
+    if let Ok(v) = value.extract::<f64>() {
+        return Ok(toml::Value::Float(v));
+    }
+    if let Ok(v) = value.extract::<String>() {
+        return Ok(toml::Value::String(v));
+    }
+
+    if let Ok(list) = value.cast::<PyList>() {
+        let mut out = Vec::new();
+        for item in list.iter() {
+            out.push(py_to_toml(&item)?);
+        }
+        return Ok(toml::Value::Array(out));
+    }
+
+    if let Ok(tuple) = value.cast::<PyTuple>() {
+        let mut out = Vec::new();
+        for item in tuple.iter() {
+            out.push(py_to_toml(&item)?);
+        }
+        return Ok(toml::Value::Array(out));
+    }
+
+    if let Ok(dict) = value.cast::<PyDict>() {
+        let mut out = toml::map::Map::new();
+        for (key, item) in dict.iter() {
+            let key: String = key.extract().map_err(|_| {
+                pyo3::exceptions::PyTypeError::new_err("config dict keys must be strings")
+            })?;
+            out.insert(key, py_to_toml(&item)?);
+        }
+        return Ok(toml::Value::Table(out));
+    }
+
+    Err(pyo3::exceptions::PyTypeError::new_err(
+        "config must be dict, list, tuple, string, int, float, or bool",
+    ))
+}
+
+fn py_to_toml_option(value: Option<&Bound<'_, PyAny>>) -> PyResult<Option<toml::Value>> {
+    match value {
+        Some(obj) => {
+            if obj.is_none() {
+                Ok(None)
+            } else {
+                Ok(Some(py_to_toml(obj)?))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
+fn extract_commands_value(value: &Bound<'_, PyAny>) -> PyResult<Option<String>> {
+    if value.is_none() {
+        return Ok(None);
+    }
+    if let Ok(text) = value.extract::<String>() {
+        return Ok(Some(text));
+    }
+    if let Ok(items) = value.extract::<Vec<String>>() {
+        return Ok(Some(items.join("\n")));
+    }
+    if value.is_callable() {
+        let py = value.py();
+        if let Ok(inspect) = py.import("inspect") {
+            if let Ok(getsource) = inspect.getattr("getsource") {
+                if let Ok(source) = getsource.call1((value,)) {
+                    if let Ok(text) = source.extract::<String>() {
+                        return Ok(Some(text));
+                    }
+                }
+            }
+        }
+    }
+    Err(pyo3::exceptions::PyTypeError::new_err(
+        "commands must be a string or list of strings",
+    ))
+}
+
 // Pure Rust impl with references
 impl Package {
     /// Resolve versions (Rust API with slice).
     pub fn solve_version_impl(&mut self, available: &[Package]) -> PyResult<()> {
-        use crate::solver::Solver;
+        use crate::solver::solve_reqs_backend;
 
         // If no reqs, nothing to solve
         if self.reqs.is_empty() {
@@ -836,18 +1314,8 @@ impl Package {
             return Ok(());
         }
 
-        // Create solver
-        let solver = match Solver::from_packages(available) {
-            Ok(s) => s,
-            Err(e) => {
-                self.solve_status = SolveStatus::Failed;
-                self.solve_error = Some(e.to_string());
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string()));
-            }
-        };
-
         // Solve requirements
-        match solver.solve_reqs(self.reqs.clone()) {
+        match solve_reqs_backend(available, self.reqs.clone()) {
             Ok(solution) => {
                 // Clone packages into deps - intentional ownership transfer
                 // Makes Package self-contained, independent from Storage
@@ -863,7 +1331,7 @@ impl Package {
             Err(e) => {
                 self.solve_status = SolveStatus::Failed;
                 self.solve_error = Some(e.to_string());
-                Err(e)
+                Err(e.into())
             }
         }
     }

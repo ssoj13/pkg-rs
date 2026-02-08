@@ -21,7 +21,7 @@ This document provides comprehensive dataflow and codepath diagrams for the pkg-
 pkg-rs is a VFX package manager similar to [rez](https://github.com/AcademySoftwareFoundation/rez). It provides:
 
 - **Package Discovery**: Scans filesystem for `package.py` definitions
-- **Dependency Resolution**: Uses PubGrub algorithm for SAT solving
+- **Dependency Resolution**: Uses PubGrub (pkg) or Rez (python) backend via `plugins.pkg_rs.resolver_backend`
 - **Environment Management**: Manages environment variables for package contexts
 - **Application Launching**: Runs applications with configured environments
 
@@ -213,6 +213,112 @@ graph LR
 
 ## Dataflow Diagrams
 
+### 0. Config Layering (ASCII)
+
+```
+Defaults (rezconfig.py)
+  |
+  v
+Config list (REZ_CONFIG_FILE)
+  |
+  v
+Home config (~/.rezconfig; skip if REZ_DISABLE_HOME_CONFIG)
+  |
+  v
+Env overrides (REZ_*; plugins excluded)
+  |
+  v
+Env JSON overrides (REZ_*_JSON)
+  |
+  v
+Package config section (build/release only)
+  |
+  v
+Effective Config (Rez schema + plugins.pkg_rs.*)
+```
+
+### 0.1 Package Loader + Commands Capture (ASCII)
+
+```
+package.py source
+  |
+  v
+Loader.execute_package_py
+  |
+  +--> Python exec (globals)
+  |       |
+  |       +--> Extract commands:
+  |             pre_build / pre / commands / post / pre_test
+  |             callable -> inspect.getsource
+  |             str/list -> joined text
+  |
+  +--> get_package() -> Package/dict
+  |
+  v
+Merge extracted commands into Package (if fields missing)
+```
+
+### 0.2 Package Commands Execution (Current vs Target)
+
+Current (pkg-rs):
+```
+Package (envs/evars, commands fields)
+  |
+  v
+pkg env -> solve -> _env -> stamp -> solve_impl
+  |
+  v
+Emit/commit env
+  |
+  v
+NOTE: pre_commands/commands/post_commands/pre_test_commands are not executed.
+```
+
+Target (Rez parity):
+```
+Package + deps + variant
+  |
+  v
+ResolvedContext
+  |
+  v
+Execute pre_commands -> commands -> post_commands (rex)
+  |
+  v
+Env mutations merged
+  |
+  v
+Emit/commit env or run app
+```
+
+Tests (Rez parity target):
+```
+ResolvedContext
+  |
+  v
+Execute pre_test_commands
+  |
+  v
+Execute tests entries
+  |
+  v
+Test report
+```
+
+### 0.3 CLI Entry Points (Single Binary)
+
+```
+pkg binary
+  |
+  v
+subcommands
+  |
+  +-- env (pkg rez env) ----> cmd_env
+  +-- build (pkg rez build) -> cmd_build
+  +-- pip (pkg rez pip) ----> cmd_pip
+  +-- rez <cmd> (unimplemented) -> stub error + parity TODO
+```
+
 ### 1. Package Discovery Flow
 
 ```mermaid
@@ -266,6 +372,9 @@ sequenceDiagram
     participant PubGrub
     participant Provider
     participant Index
+    participant Python
+    participant RezConfig
+    participant ResolvedContext
 
     User->>Package: solve(available)
     Package->>Package: solve_version_impl()
@@ -274,22 +383,27 @@ sequenceDiagram
     Solver->>Index: build PackageIndex
 
     Package->>Solver: solve_reqs(reqs)
-    Solver->>Provider: with_root_deps(index, reqs)
+    alt backend = pkg
+        Solver->>Provider: with_root_deps(index, reqs)
+        Solver->>PubGrub: resolve(__root__, v0.0.0)
+        loop Until solved
+            PubGrub->>Provider: choose_version(pkg, range)
+            Provider->>Index: versions(pkg)
+            Provider-->>PubGrub: newest matching Version
 
-    Solver->>PubGrub: resolve(__root__, v0.0.0)
-
-    loop Until solved
-        PubGrub->>Provider: choose_version(pkg, range)
-        Provider->>Index: versions(pkg)
-        Provider-->>PubGrub: newest matching Version
-
-        PubGrub->>Provider: get_dependencies(pkg, ver)
-        Provider->>Index: deps(pkg, ver)
-        Provider->>Provider: depspec_to_ranges()
-        Provider-->>PubGrub: Dependencies::Available
+            PubGrub->>Provider: get_dependencies(pkg, ver)
+            Provider->>Index: deps(pkg, ver)
+            Provider->>Provider: depspec_to_ranges()
+            Provider-->>PubGrub: Dependencies::Available
+        end
+        PubGrub-->>Solver: Solution (pkg names)
+    else backend = rez
+        Solver->>Python: ensure_rez_on_sys_path
+        Solver->>RezConfig: Config(filepaths) + _replace_config
+        Solver->>ResolvedContext: ResolvedContext(reqs)
+        ResolvedContext-->>Solver: resolved_packages
     end
 
-    PubGrub-->>Solver: Solution (pkg names)
     Solver-->>Package: Vec<String>
 
     Package->>Package: filter available -> deps
@@ -485,7 +599,7 @@ Location: storage.rs:367-473
 2. Load cache from disk (Cache::load)
 3. Determine locations:
    - Custom paths if provided
-   - Or: PKG_LOCATIONS env var
+   - Or: rezconfig packages_path (including REZ_PACKAGES_PATH)
    - Or: ./repo fallback
 4. Walk each location with jwalk::WalkDir
 5. Collect all package.py files
@@ -600,7 +714,7 @@ Error types and their sources:
 | EvarError | evar.rs | DepthExceeded, CircularReference, InvalidAction |
 | EnvError | env.rs | DepthExceeded, CircularReference, VariableNotFound |
 | PackageError | package.rs | EnvNotFound, AppNotFound, InvalidName, InvalidVersion, DepsNotSolved |
-| SolverError | solver/ | InvalidDepSpec, NoSolution, NoMatchingVersion, Conflict, CircularDependency |
+| SolverError | solver/ | InvalidDepSpec, NoSolution, NoMatchingVersion, Conflict, CircularDependency, BackendError |
 | StorageError | storage.rs | InvalidPath, ScanFailed, InvalidPackage, LoadFailed |
 | LoaderError | loader.rs | FileNotFound, ExecutionError, MissingFunction, InvalidReturn |
 
@@ -638,6 +752,11 @@ pkg_lib (lib.rs)
 - Python objects are **cloned** when crossing the boundary
 - Package.deps contains **owned copies** (not references)
 - This makes solved packages **self-contained**
+
+### Embedded Rez Runtime
+
+- `python/rez` and `python/rezplugins` must be present on `sys.path` for config and resolver imports
+- `ensure_rez_on_sys_path` inserts the python root (see `src/py.rs`)
 
 ---
 

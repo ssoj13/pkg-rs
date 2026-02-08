@@ -9,7 +9,7 @@ environment to launch tools. Python is used only to author and execute
 
 ```powershell
 # 1) Point pkg to your repo
-$env:PKG_LOCATIONS="D:\packages;D:\tools"
+$env:REZ_PACKAGES_PATH="D:\packages;D:\tools"
 
 # 2) Scan repositories
 pkg scan
@@ -27,41 +27,29 @@ pkg env maya -- "C:\Program Files\Autodesk\Maya2024\bin\maya.exe"
 Why this flow: you first tell the scanner where packages live, then verify
 the data (`list`/`info`), then build an environment and run the software.
 
-## Configuration (pkg-rs.toml)
+## Configuration (rezconfig.py)
 
-pkg can load a TOML config file. Search order:
+pkg loads Rez config via embedded `rez.config`. Precedence:
 
 1. `--cfg <path>` (full override, error if missing)
-2. `PKG_RS_CONFIG` env var
-3. `pkg-rs.toml` next to the `pkg` binary
-4. `~/.pkg-rs/pkg-rs.toml`
+2. `REZ_CONFIG_FILE` env var (list)
+3. `~/.rezconfig` (skipped if `REZ_DISABLE_HOME_CONFIG=1`)
 
-If none of these exist, pkg will create a default config at
-`~/.pkg-rs/pkg-rs.toml`.
+Defaults come from embedded `rezconfig.py`. Any `REZ_<KEY>` or `REZ_<KEY>_JSON`
+variable overrides the matching setting.
 
-Example:
+Example `~/.rezconfig`:
 
-```toml
-[repos]
-paths = ["D:/packages", "D:/tools"]
-local_path = "D:/packages-local"
-release_path = "//server/packages"
-user_packages = true
-scan_depth = 4
+```python
+packages_path = ["D:/packages", "D:/tools"]
+local_packages_path = "D:/packages-local"
+release_packages_path = "//server/packages"
+plugins = {"pkg_rs": {"resolver_backend": "pkg"}}
 ```
-
-Fields:
-
-- `paths` - repo roots to scan (ordered)
-- `local_path` - install target for `pkg build --process local`
-- `release_path` - install target for `pkg build --process central`
-- `user_packages` - include `~/.pkg-rs/packages`
-- `scan_depth` - max directory depth when scanning for `package.py`
 
 ## Locations and Repositories
 
-pkg scans for `package.py` under repositories. There are four ways to define
-where to scan (in priority order):
+pkg scans for `package.py` under repositories. Priority order:
 
 1. `--repo` flags:
 
@@ -69,18 +57,11 @@ where to scan (in priority order):
 pkg -r D:\packages -r \\server\repo list
 ```
 
-2. `pkg-rs.toml` `[repos].paths` (if present and `--repo` is not used)
+2. rezconfig `packages_path` (including `REZ_PACKAGES_PATH`)
 
-3. `PKG_LOCATIONS` env var (split by `;` on Windows, `:` on Linux):
+3. Fallback: a `repo` folder in the current directory (if it exists).
 
-```powershell
-$env:PKG_LOCATIONS="D:\packages;D:\tools"
-```
-
-4. Fallback: a `repo` folder in the current directory (if it exists).
-
-You can also add a personal repo with `--user-packages` (or config
-`user_packages = true`), which maps to `~/.pkg-rs/packages`:
+You can also add a personal repo with `--user-packages` (maps to `~/.pkg-rs/packages`):
 
 ```powershell
 pkg --user-packages list
@@ -180,8 +161,8 @@ Outputs:
 - Installed package layout when `--install` is used
 
 Install targets use config when available:
-- `repos.local_path` for `--process local`
-- `repos.release_path` for `--process central`
+- `local_packages_path` for `--process local`
+- `release_packages_path` for `--process central`
 - fallback to `--prefix` or other scan roots
 
 ## Dependency Graph
@@ -323,7 +304,7 @@ pkg -x maya*      # exclude pattern (repeatable)
 
 ## Troubleshooting
 
-- "Package not found": verify paths (`PKG_LOCATIONS`, `--repo`) and re-run `pkg scan`.
+- "Package not found": verify paths (`REZ_PACKAGES_PATH`/`packages_path`, `--repo`) and re-run `pkg scan`.
 - "Environment not found": the package has no `Env` named `default` (set `--env-name`).
 - "Failed to solve dependencies": run `pkg graph` to see conflicts; check your
   version constraints in `package.py`.

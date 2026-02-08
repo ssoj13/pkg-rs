@@ -15,7 +15,7 @@ mod shell;
 
 use clap::{CommandFactory, Parser};
 use clap_complete::generate;
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, RezCommands};
 use log::{debug, info, trace};
 use pkg_lib::{config, Storage};
 use std::path::PathBuf;
@@ -51,6 +51,26 @@ fn main() -> ExitCode {
     if let Commands::GenPkg { package_id } = command {
         debug!("cmd: gen-pkg package_id={}", package_id);
         return commands::cmd_gen_pkg(&package_id);
+    }
+    if let Commands::Rez(RezCommands::Config(args)) = &command {
+        debug!("cmd: rez config");
+        return commands::cmd_rez_config(args);
+    }
+    if let Commands::Rez(RezCommands::Bind(args)) = &command {
+        debug!("cmd: rez bind");
+        return commands::cmd_rez_bind(args);
+    }
+    if let Commands::Rez(RezCommands::Context(args)) = &command {
+        debug!("cmd: rez context");
+        return commands::cmd_rez_passthrough("context", &args.args);
+    }
+    if let Commands::Rez(RezCommands::Status(args)) = &command {
+        debug!("cmd: rez status");
+        return commands::cmd_rez_passthrough("status", &args.args);
+    }
+    if let Commands::Rez(RezCommands::Suite(args)) = &command {
+        debug!("cmd: rez suite");
+        return commands::cmd_rez_passthrough("suite", &args.args);
     }
 
     // Build storage with custom repos if provided
@@ -100,60 +120,39 @@ fn main() -> ExitCode {
             debug!("cmd: info package={}", package);
             commands::cmd_info(&storage, &package, json)
         }
-        Commands::Env {
-            packages,
-            command,
-            env_name,
-            format,
-            expand,
-            output,
-            dry_run,
-            stamp,
-        } => {
+        Commands::Env(args) => {
             debug!(
                 "cmd: env packages={:?} command={:?} env_name={:?}",
-                packages, command, env_name
+                args.packages, args.command, args.env_name
             );
             commands::cmd_env(
                 &storage,
-                packages,
-                command,
-                env_name,
-                &format,
-                expand,
-                output,
-                dry_run,
-                stamp,
+                args.packages,
+                args.command,
+                args.env_name,
+                &args.format,
+                args.expand,
+                args.output,
+                args.dry_run,
+                args.stamp,
                 cli.verbose > 0,
             )
         }
-        Commands::Build {
-            clean,
-            install,
-            prefix,
-            build_system,
-            process,
-            variants,
-            build_args,
-            child_build_args,
-            scripts,
-            view_pre,
-            extra_args,
-        } => {
+        Commands::Build(args) => {
             debug!("cmd: build");
             commands::cmd_build(
                 &storage,
-                build_system,
-                process,
-                build_args,
-                child_build_args,
-                variants,
-                clean,
-                install,
-                prefix,
-                scripts,
-                view_pre,
-                extra_args,
+                args.build_system,
+                args.process,
+                args.build_args,
+                args.child_build_args,
+                args.variants,
+                args.clean,
+                args.install,
+                args.prefix,
+                args.scripts,
+                args.view_pre,
+                args.extra_args,
             )
         }
         Commands::BuildEnv {
@@ -162,29 +161,19 @@ fn main() -> ExitCode {
             install,
             install_path,
         } => commands::cmd_build_env(build_path, variant_index, install, install_path),
-        Commands::Pip {
-            package,
-            python_version,
-            no_deps,
-            min_deps,
-            install,
-            release,
-            prefix,
-            extra,
-            extra_args,
-        } => {
-            debug!("cmd: pip package={}", package);
+        Commands::Pip(args) => {
+            debug!("cmd: pip package={}", args.package);
             commands::cmd_pip(
                 &storage,
-                package,
-                python_version,
-                no_deps,
-                min_deps,
-                install,
-                release,
-                prefix,
-                extra,
-                extra_args,
+                args.package,
+                args.python_version,
+                args.no_deps,
+                args.min_deps,
+                args.install,
+                args.release,
+                args.prefix,
+                args.extra,
+                args.extra_args,
             )
         }
         Commands::Graph {
@@ -236,6 +225,86 @@ fn main() -> ExitCode {
             );
             commands::cmd_generate_repo(output, pkg_count, ver_count, depth, dep_rate, seed)
         }
+        Commands::Rez(rez_cmd) => match rez_cmd {
+            RezCommands::Env(args) => {
+                debug!(
+                    "cmd: rez env packages={:?} command={:?} env_name={:?}",
+                    args.packages, args.command, args.env_name
+                );
+                commands::cmd_env(
+                    &storage,
+                    args.packages,
+                    args.command,
+                    args.env_name,
+                    &args.format,
+                    args.expand,
+                    args.output,
+                    args.dry_run,
+                    args.stamp,
+                    cli.verbose > 0,
+                )
+            }
+            RezCommands::Build(args) => {
+                debug!("cmd: rez build");
+                commands::cmd_build(
+                    &storage,
+                    args.build_system,
+                    args.process,
+                    args.build_args,
+                    args.child_build_args,
+                    args.variants,
+                    args.clean,
+                    args.install,
+                    args.prefix,
+                    args.scripts,
+                    args.view_pre,
+                    args.extra_args,
+                )
+            }
+            RezCommands::Pip(args) => {
+                debug!("cmd: rez pip package={}", args.package);
+                commands::cmd_pip(
+                    &storage,
+                    args.package,
+                    args.python_version,
+                    args.no_deps,
+                    args.min_deps,
+                    args.install,
+                    args.release,
+                    args.prefix,
+                    args.extra,
+                    args.extra_args,
+                )
+            }
+            RezCommands::Bind(args) => commands::cmd_rez_bind(&args),
+            RezCommands::Config(args) => commands::cmd_rez_config(&args),
+            RezCommands::Context(args) => commands::cmd_rez_passthrough("context", &args.args),
+            RezCommands::Cp(args) => cmd_rez_stub("rez cp", args.args),
+            RezCommands::Depends(args) => cmd_rez_stub("rez depends", args.args),
+            RezCommands::Diff(args) => cmd_rez_stub("rez diff", args.args),
+            RezCommands::Gui(args) => cmd_rez_stub("rez gui", args.args),
+            RezCommands::Help(args) => cmd_rez_stub("rez help", args.args),
+            RezCommands::Interpret(args) => cmd_rez_stub("rez interpret", args.args),
+            RezCommands::Memcache(args) => cmd_rez_stub("rez memcache", args.args),
+            RezCommands::PkgCache(args) => cmd_rez_stub("rez pkg-cache", args.args),
+            RezCommands::Plugins(args) => cmd_rez_stub("rez plugins", args.args),
+            RezCommands::Python(args) => cmd_rez_stub("rez python", args.args),
+            RezCommands::Release(args) => cmd_rez_stub("rez release", args.args),
+            RezCommands::Search(args) => cmd_rez_stub("rez search", args.args),
+            RezCommands::Selftest(args) => cmd_rez_stub("rez selftest", args.args),
+            RezCommands::Status(args) => commands::cmd_rez_passthrough("status", &args.args),
+            RezCommands::Suite(args) => commands::cmd_rez_passthrough("suite", &args.args),
+            RezCommands::Test(args) => cmd_rez_stub("rez test", args.args),
+            RezCommands::View(args) => cmd_rez_stub("rez view", args.args),
+            RezCommands::Yaml2py(args) => cmd_rez_stub("rez yaml2py", args.args),
+            RezCommands::Bundle(args) => cmd_rez_stub("rez bundle", args.args),
+            RezCommands::Benchmark(args) => cmd_rez_stub("rez benchmark", args.args),
+            RezCommands::PkgIgnore(args) => cmd_rez_stub("rez pkg-ignore", args.args),
+            RezCommands::Mv(args) => cmd_rez_stub("rez mv", args.args),
+            RezCommands::Rm(args) => cmd_rez_stub("rez rm", args.args),
+            RezCommands::Complete(args) => cmd_rez_stub("rez _rez-complete", args.args),
+            RezCommands::Forward(args) => cmd_rez_stub("rez _rez_fwd", args.args),
+        },
         Commands::Version => {
             println!("pkg {}", pkg_lib::VERSION);
             ExitCode::SUCCESS
@@ -315,6 +384,19 @@ fn print_usage() {
     Cli::command().print_long_help().unwrap();
 }
 
+/// Stub handler for rez parity commands not implemented yet.
+fn cmd_rez_stub(cmd: &str, args: Vec<String>) -> ExitCode {
+    if args.is_empty() {
+        eprintln!("Rez parity: '{}' is not implemented yet.", cmd);
+    } else {
+        eprintln!(
+            "Rez parity: '{}' is not implemented yet. Args: {:?}",
+            cmd, args
+        );
+    }
+    ExitCode::FAILURE
+}
+
 /// Generate shell completions.
 fn cmd_completions(shell: clap_complete::Shell) -> ExitCode {
     let mut cmd = Cli::command();
@@ -330,26 +412,20 @@ fn build_storage(
 ) -> Result<Storage, String> {
     let mut all_paths = Vec::new();
     let config = config::get().map_err(|e| e.to_string())?;
-    let use_user_packages = user_packages || config.repos.user_packages.unwrap_or(false);
-
-    // Add user packages first (highest priority - overrides)
-    if use_user_packages {
-        if let Some(user_dir) = Storage::user_packages_dir() {
-            if user_dir.exists() {
-                debug!("Adding user packages: {}", user_dir.display());
-                all_paths.push(user_dir);
-            }
-        }
-    }
 
     // Add extra repos
     all_paths.extend(extra_repos.iter().cloned());
 
     // Add defaults if no explicit repos
     if extra_repos.is_empty() {
-        if let Ok(default_storage) = Storage::scan_impl(None) {
-            for loc in default_storage.locations() {
-                all_paths.push(PathBuf::from(loc));
+        all_paths.extend(crate::config::packages_path(config));
+    }
+
+    if user_packages {
+        if let Some(user_dir) = Storage::user_packages_dir() {
+            if user_dir.exists() {
+                debug!("Adding user packages: {}", user_dir.display());
+                all_paths.push(user_dir);
             }
         }
     }
