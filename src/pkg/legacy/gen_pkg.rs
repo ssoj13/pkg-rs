@@ -1,28 +1,30 @@
 //! Generate package.py template command.
 
 use log::{error, info, warn};
-use pkg_lib::name::PackageId;
+use pkg_lib::package_name::PackageName;
 use std::path::Path;
 use std::process::ExitCode;
 
 /// Generate package.py template for given package identifier.
 pub fn cmd_gen_pkg(package_id: &str) -> ExitCode {
     // Parse package ID
-    let pkg_id = match PackageId::parse(package_id) {
-        Some(id) => id,
-        None => {
+    let pkg_id = match PackageName::parse(package_id) {
+        Ok(id) => id,
+        Err(_) => {
             error!(
                 "Invalid package ID: '{}'. Expected format: name-version[--variant]",
                 package_id
             );
-            error!("Examples: maya-2026.1.0, maya-2026.1.0--win64");
+            error!("Examples: maya-2026.1.0, my-plugin-1.0.0, maya-2026.1.0--win64");
             return ExitCode::FAILURE;
         }
     };
 
     info!(
         "Generating package.py for: name='{}', version={:?}, variant={:?}",
-        pkg_id.name, pkg_id.version(), pkg_id.variant
+        pkg_id.base(),
+        pkg_id.version_string(),
+        pkg_id.variant()
     );
 
     // Check if package.py already exists
@@ -49,8 +51,8 @@ pub fn cmd_gen_pkg(package_id: &str) -> ExitCode {
 }
 
 /// Generate full package.py template with all fields.
-fn generate_template(pkg_id: &PackageId) -> String {
-    let variant_line = match &pkg_id.variant {
+fn generate_template(pkg_id: &PackageName) -> String {
+    let variant_line = match pkg_id.variant() {
         Some(v) => format!("variant = \"{}\"", v),
         None => "# variant = \"\"  # Optional: win64, linux, py310, etc.".to_string(),
     };
@@ -87,7 +89,8 @@ tags = []         # Tags for filtering: ["dcc", "maya", "plugin"]
 # Package requirements (supports version constraints)
 # Examples:
 #   "maya"           - any version
-#   "maya-2026"      - exact version
+#   "maya==2026"     - exact version
+#   "maya-2026"      - Rez-style superset range (2026.x)
 #   "maya>=2024"     - version 2024 or higher
 #   "maya>=2024,<2027" - version range
 requires = []
@@ -172,9 +175,9 @@ env = {{
 #     """Called after package is built."""
 #     pass
 "##,
-        name = pkg_id.name,
-        version = pkg_id.version().unwrap_or_else(|| "0.0.0".to_string()),
+        name = pkg_id.base(),
+        version = pkg_id.version_string().unwrap_or_else(|| "0.0.0".to_string()),
         variant = variant_line,
-        name_upper = pkg_id.name.to_uppercase().replace('-', "_"),
+        name_upper = pkg_id.base().to_uppercase().replace('-', "_"),
     )
 }

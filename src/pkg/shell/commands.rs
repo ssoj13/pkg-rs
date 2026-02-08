@@ -1,6 +1,6 @@
 //! Shell command implementations.
 
-use crate::commands::matches_glob;
+use crate::legacy::matches_glob;
 use pkg_lib::{SolveStatus, Storage};
 use std::process::Command;
 

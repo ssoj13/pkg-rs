@@ -28,15 +28,11 @@ impl Requirement {
             s = rest;
         }
 
-        let (name, range, original) = if let Some(idx) = s
-            .find(|c: char| matches!(c, '-' | '@' | '#' | '=' | '<' | '>'))
-        {
+        let (name, range, original) = if let Some((idx, sep)) = find_req_sep(s) {
             let name = s[..idx].to_string();
             let mut req_str = &s[idx..];
-            if let Some(first) = req_str.chars().next() {
-                if matches!(first, '-' | '@' | '#') {
-                    req_str = &req_str[1..];
-                }
+            if matches!(sep, '-' | '@' | '#') {
+                req_str = &req_str[1..];
             }
 
             let mut range = if req_str.is_empty() {
@@ -67,4 +63,22 @@ impl Requirement {
             original,
         })
     }
+}
+
+fn find_req_sep(s: &str) -> Option<(usize, char)> {
+    let mut iter = s.char_indices().peekable();
+    while let Some((i, ch)) = iter.next() {
+        match ch {
+            '@' | '#' | '<' | '>' | '=' => return Some((i, ch)),
+            '-' => {
+                if let Some((_, next)) = iter.peek() {
+                    if next.is_ascii_digit() {
+                        return Some((i, ch));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }

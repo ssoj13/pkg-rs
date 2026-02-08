@@ -1,7 +1,6 @@
 //! Rez status command (native subset with fallback).
 
 use crate::cli::RezStubArgs;
-use crate::commands::cmd_rez_passthrough;
 use std::collections::BTreeSet;
 use std::env;
 use std::path::PathBuf;
@@ -10,11 +9,15 @@ use std::process::ExitCode;
 pub fn cmd_rez_status(args: &RezStubArgs) -> ExitCode {
     let parsed = match parse_status_args(&args.args) {
         Ok(parsed) => parsed,
-        Err(_) => return cmd_rez_passthrough("status", &args.args),
+        Err(_) => {
+            eprintln!("rez status: unsupported or invalid arguments");
+            return ExitCode::FAILURE;
+        }
     };
 
     if parsed.fallback {
-        return cmd_rez_passthrough("status", &args.args);
+        eprintln!("rez status: unsupported arguments");
+        return ExitCode::FAILURE;
     }
 
     run_status()

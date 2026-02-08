@@ -383,7 +383,7 @@ fn split_name_version(raw: &str) -> Option<(String, String)> {
 
 fn extract_family(text: &str) -> Option<String> {
     static FAMILY_RE: OnceLock<Regex> = OnceLock::new();
-    let re = FAMILY_RE.get_or_init(|| Regex::new(r"^([A-Za-z0-9_]+)[-@]").unwrap());
+    let re = FAMILY_RE.get_or_init(|| Regex::new(r"^([A-Za-z0-9_]+)[-@#]").unwrap());
     re.captures(text)
         .and_then(|cap| cap.get(1).map(|m| m.as_str().to_string()))
 }

@@ -1,7 +1,8 @@
 //! Package name parsing utilities (Rez-style).
 //!
-//! Rez treats package names and versions as separate components with a
-//! single separator. Package names must not contain `-`, `@`, or `#`.
+//! Rez-style package ID parsing with a hyphen-digit version delimiter.
+//! Package names may contain hyphens; a version starts at the first `-`
+//! that is immediately followed by a digit (e.g. `foo-bar-1.0`).
 //! Versions may contain alphanumeric tokens separated by `.` or `-`.
 //!
 //! This module parses identifiers of the form:
@@ -10,12 +11,12 @@
 //! {name}{sep}{version}[--{variant}]
 //! ```
 //!
-//! Where `{sep}` is one of `-`, `@`, `#`.
+//! Where `{sep}` is the hyphen that starts a version (hyphen-digit rule).
 //!
 //! Notes:
 //! - The optional `--{variant}` suffix is a pkg-rs extension to keep the
 //!   variant distinct from the version string. It is **not** part of Rez.
-//! - If no separator is present, the identifier is treated as name-only.
+//! - If no hyphen-digit is present, the identifier is treated as name-only.
 
 use crate::rez_version::Version;
 
@@ -35,7 +36,7 @@ impl PackageId {
     ///
     /// Examples:
     /// - `maya-2026.1.0` => name="maya", version="2026.1.0"
-    /// - `houdini@20.5` => name="houdini", version="20.5"
+    /// - `my-plugin-1.2.3` => name="my-plugin", version="1.2.3"
     /// - `foo` => name="foo", version=None
     /// - `maya-2026.1.0--win64` => variant="win64" (pkg-rs extension)
     pub fn parse(id: &str) -> Option<Self> {
@@ -52,21 +53,15 @@ impl PackageId {
             (id, None)
         };
 
-        let mut sep_idx = None;
-        for (i, ch) in main.char_indices() {
-            if matches!(ch, '-' | '@' | '#') {
-                sep_idx = Some((i, ch));
-                break;
-            }
-        }
+        let sep_idx = find_version_sep(main);
 
-        if let Some((idx, _sep)) = sep_idx {
+        if let Some(idx) = sep_idx {
             let name = &main[..idx];
             let version = &main[idx + 1..];
             if name.is_empty() || version.is_empty() {
                 return None;
             }
-            if name.contains(['-', '@', '#']) {
+            if !is_valid_name(name) {
                 return None;
             }
             if Version::parse(version).is_err() {
@@ -78,15 +73,14 @@ impl PackageId {
                 version: Some(version.to_string()),
                 variant,
             })
-        } else {
-            if main.contains(['-', '@', '#']) {
-                return None;
-            }
+        } else if is_valid_name(main) {
             Some(PackageId {
                 name: main.to_string(),
                 version: None,
                 variant,
             })
+        } else {
+            None
         }
     }
 
@@ -115,6 +109,33 @@ impl PackageId {
     }
 }
 
+fn find_version_sep(s: &str) -> Option<usize> {
+    let mut iter = s.char_indices().peekable();
+    while let Some((i, ch)) = iter.next() {
+        if ch == '-' {
+            if let Some((_, next)) = iter.peek() {
+                if next.is_ascii_digit() {
+                    return Some(i);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn is_valid_name(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    if name.starts_with('-') || name.ends_with('-') {
+        return false;
+    }
+    if name.chars().any(|c| c.is_whitespace() || c == '@' || c == '#') {
+        return false;
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,6 +157,20 @@ mod tests {
     }
 
     #[test]
+    fn parse_hyphenated_name_version() {
+        let id = PackageId::parse("my-plugin-1.2.3").unwrap();
+        assert_eq!(id.name, "my-plugin");
+        assert_eq!(id.version, Some("1.2.3".to_string()));
+    }
+
+    #[test]
+    fn parse_hyphenated_name_only() {
+        let id = PackageId::parse("my-plugin").unwrap();
+        assert_eq!(id.name, "my-plugin");
+        assert_eq!(id.version, None);
+    }
+
+    #[test]
     fn parse_variant_extension() {
         let id = PackageId::parse("maya-2026.1.0--win64").unwrap();
         assert_eq!(id.name, "maya");
@@ -148,6 +183,5 @@ mod tests {
         assert!(PackageId::parse("").is_none());
         assert!(PackageId::parse("maya-").is_none());
         assert!(PackageId::parse("maya-@").is_none());
-        assert!(PackageId::parse("my-plugin-1.0").is_none());
     }
 }

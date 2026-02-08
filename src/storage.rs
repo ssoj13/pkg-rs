@@ -83,6 +83,7 @@ use crate::cache::Cache;
 use crate::dep::DepSpec;
 use crate::error::StorageError;
 use crate::package::Package;
+use crate::repo_ops::IGNORE_PREFIX;
 use jwalk::WalkDir;
 use log::{debug, info, trace, warn};
 use pyo3::prelude::*;
@@ -547,6 +548,11 @@ impl Storage {
 
         trace!("Storage: loading package from {}", path.display());
 
+        if is_ignored_package(path) {
+            trace!("Storage: skipping ignored package at {}", path.display());
+            return Ok(());
+        }
+
         // Use Loader to execute package.py and get Package
         let mut loader = Loader::new(Some(false));
         let mut pkg = loader.load_path(path).map_err(|e| {
@@ -681,6 +687,22 @@ impl Default for Storage {
     fn default() -> Self {
         Self::empty()
     }
+}
+
+fn is_ignored_package(path: &Path) -> bool {
+    let Some(version_dir) = path.parent() else {
+        return false;
+    };
+    let Some(family_dir) = version_dir.parent() else {
+        return false;
+    };
+
+    let Some(version) = version_dir.file_name().and_then(|s| s.to_str()) else {
+        return false;
+    };
+
+    let ignore_file = family_dir.join(format!("{}{}", IGNORE_PREFIX, version));
+    ignore_file.exists()
 }
 
 #[cfg(test)]

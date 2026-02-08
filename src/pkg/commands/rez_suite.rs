@@ -1,7 +1,6 @@
 //! Rez suite command (native subset with fallback).
 
 use crate::cli::RezStubArgs;
-use crate::commands::cmd_rez_passthrough;
 use serde_yaml::Value as YamlValue;
 use std::collections::{BTreeSet, HashMap};
 use std::env;
@@ -11,11 +10,15 @@ use std::process::ExitCode;
 pub fn cmd_rez_suite(args: &RezStubArgs) -> ExitCode {
     let parsed = match parse_suite_args(&args.args) {
         Ok(parsed) => parsed,
-        Err(_) => return cmd_rez_passthrough("suite", &args.args),
+        Err(_) => {
+            eprintln!("rez suite: unsupported or invalid arguments");
+            return ExitCode::FAILURE;
+        }
     };
 
     if parsed.fallback {
-        return cmd_rez_passthrough("suite", &args.args);
+        eprintln!("rez suite: unsupported arguments");
+        return ExitCode::FAILURE;
     }
 
     run_suite(parsed)

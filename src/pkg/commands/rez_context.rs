@@ -1,7 +1,6 @@
 //! Rez context command (native subset with fallback).
 
 use crate::cli::RezStubArgs;
-use crate::commands::cmd_rez_passthrough;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::env;
@@ -11,11 +10,15 @@ use std::process::ExitCode;
 pub fn cmd_rez_context(args: &RezStubArgs) -> ExitCode {
     let parsed = match parse_context_args(&args.args) {
         Ok(parsed) => parsed,
-        Err(_) => return cmd_rez_passthrough("context", &args.args),
+        Err(_) => {
+            eprintln!("rez context: unsupported or invalid arguments");
+            return ExitCode::FAILURE;
+        }
     };
 
     if parsed.fallback {
-        return cmd_rez_passthrough("context", &args.args);
+        eprintln!("rez context: unsupported arguments");
+        return ExitCode::FAILURE;
     }
 
     run_context(parsed)

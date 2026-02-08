@@ -286,11 +286,11 @@ mod tests {
         let ver = provider
             .choose_version(&"__root__".to_string(), &Ranges::full())
             .unwrap();
-        assert_eq!(ver, Some(Version::new(0, 0, 0)));
+        assert_eq!(ver, Some(Version::empty()));
 
         // Virtual root deps
         let deps = provider
-            .get_dependencies(&"__root__".to_string(), &Version::new(0, 0, 0))
+            .get_dependencies(&"__root__".to_string(), &Version::empty())
             .unwrap();
 
         if let Dependencies::Available(map) = deps {

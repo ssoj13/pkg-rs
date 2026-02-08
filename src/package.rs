@@ -6,9 +6,12 @@
 //!
 //! # Package Naming Convention
 //!
-//! Package names follow a strict format: `base-version` where:
-//! - **base**: Package identifier (e.g., "maya", "redshift", "houdini")
+//! Package names follow a strict format: `base-version[--variant]` where:
+//! - **base**: Package identifier (e.g., "maya", "redshift", "my-plugin")
 //! - **version**: Rez-style version string (e.g., "2026.1.0", "3.5", "2.0-beta")
+//!
+//! The version starts at the first `-` that is immediately followed by a digit.
+//! This allows hyphens in the base name.
 //!
 //! The full name is `maya-2026.1.0` and is used as the unique identifier.
 //!
@@ -1449,23 +1452,24 @@ impl Package {
     ///
     /// let (base, version) = Package::parse_name("maya-2026.1.0--win64")?;
     /// assert_eq!(base, "maya");
-    /// assert_eq!(version, "2026.1.0--win64");
+    /// assert_eq!(version, "2026.1.0");
+    ///
+    /// let (base, version) = Package::parse_name("my-plugin-1.2.3")?;
+    /// assert_eq!(base, "my-plugin");
+    /// assert_eq!(version, "1.2.3");
     /// ```
     pub fn parse_name(name: &str) -> Result<(String, String), PackageError> {
         let pkg_id = Self::parse_id(name)?;
 
         // Get version string (required for this function)
-        let version_str = pkg_id.version().ok_or_else(|| PackageError::InvalidName {
+        let version_str = pkg_id.version_string().ok_or_else(|| PackageError::InvalidName {
             name: name.to_string(),
             reason: "Missing version".to_string(),
         })?;
 
-        // Return version with variant suffix if present
-        let version = match pkg_id.variant {
-            Some(v) => format!("{}--{}", version_str, v),
-            None => version_str,
-        };
-        Ok((pkg_id.name, version))
+        // Ignore variant suffix for version parsing
+        let _ = pkg_id.variant();
+        Ok((pkg_id.base().to_string(), version_str))
     }
 
     /// Parse package ID string into components.
@@ -1473,25 +1477,17 @@ impl Package {
     /// # Example
     /// ```ignore
     /// let id = Package::parse_id("maya-2026.1.0--win64")?;
-    /// assert_eq!(id.name, "maya");
-    /// assert_eq!(id.version(), Some("2026.1.0".to_string()));
-    /// assert_eq!(id.variant, Some("win64".to_string()));
+    /// assert_eq!(id.base(), "maya");
+    /// assert_eq!(id.version_string(), Some("2026.1.0".to_string()));
+    /// assert_eq!(id.variant(), Some("win64"));
     /// ```
-    pub fn parse_id(name: &str) -> Result<crate::name::PackageId, PackageError> {
-        use crate::name::PackageId;
+    pub fn parse_id(name: &str) -> Result<crate::package_name::PackageName, PackageError> {
+        use crate::package_name::PackageName;
 
-        let pkg_id = PackageId::parse(name).ok_or_else(|| PackageError::InvalidName {
+        let pkg_id = PackageName::parse(name).map_err(|e| PackageError::InvalidName {
             name: name.to_string(),
-            reason: "Invalid package ID format".to_string(),
+            reason: e.to_string(),
         })?;
-
-        // Validate version is valid (if present)
-        if let Some(version_str) = pkg_id.version() {
-            Version::parse(&version_str).map_err(|e| PackageError::InvalidVersion {
-                version: version_str,
-                reason: e.to_string(),
-            })?;
-        }
 
         Ok(pkg_id)
     }
@@ -1543,14 +1539,20 @@ impl Package {
         // Since insert prepends, we iterate: transitive first, then direct in reverse request order.
         let deps_env = if deps && !self.deps.is_empty() {
             // Build ordered list: direct reqs in request order, then transitive
-            let req_bases: Vec<&str> = self.reqs.iter()
-                .map(|r| r.split('@').next().unwrap_or(r).split('-').next().unwrap_or(r))
+            let req_bases: Vec<String> = self
+                .reqs
+                .iter()
+                .map(|r| {
+                    crate::dep::DepSpec::parse_impl(r)
+                        .map(|d| d.base)
+                        .unwrap_or_else(|_| r.to_string())
+                })
                 .collect();
             
             // Find direct deps in request order
             let mut direct: Vec<&Package> = Vec::new();
             for base in &req_bases {
-                if let Some(dep) = self.deps.iter().find(|d| &d.base.as_str() == base) {
+                if let Some(dep) = self.deps.iter().find(|d| d.base == *base) {
                     direct.push(dep);
                 }
             }
@@ -1650,7 +1652,7 @@ impl Package {
     /// - PKG_{BASE}_MAJOR   - major version component
     /// - PKG_{BASE}_MINOR   - minor version component  
     /// - PKG_{BASE}_PATCH   - patch version component
-    /// - PKG_{BASE}_VARIANT - prerelease/build metadata (if any)
+    /// - PKG_{BASE}_VARIANT - extra version tokens (if any)
     ///
     /// Where {BASE} is uppercase base name with dashes replaced by underscores.
     pub fn stamp(&self) -> Vec<crate::evar::Evar> {
@@ -1733,6 +1735,11 @@ mod tests {
         let (base2, ver2) = Package::parse_name("myplugin-1.0.0").unwrap();
         assert_eq!(base2, "myplugin");
         assert_eq!(ver2, "1.0.0");
+
+        // Hyphenated base name
+        let (base3, ver3) = Package::parse_name("my-plugin-1.0.0").unwrap();
+        assert_eq!(base3, "my-plugin");
+        assert_eq!(ver3, "1.0.0");
 
         // Invalid: no version
         assert!(Package::parse_name("maya").is_err());

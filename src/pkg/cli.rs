@@ -13,17 +13,16 @@ use std::path::PathBuf;
     Manages packages with Python-based definitions (package.py),\n\
     resolves dependencies using SAT solver, and configures environments.\n\n\
     EXAMPLES:\n\
-    \x20 pkg ls                      List all packages\n\
-    \x20 pkg ls -L                   Only latest versions\n\
-    \x20 pkg info maya               Show package details\n\
     \x20 pkg env maya                Print environment\n\
     \x20 pkg env maya -- maya.exe    Launch with environment\n\
-    \x20 pkg sh                      Interactive mode")]
+    \x20 pkg build                   Build package in current directory\n\
+    \x20 pkg pip <pkg> -i           Import pip package into repo\n\
+    \x20 pkg python                  Run embedded Python REPL")]
 #[command(after_help = "SUBCOMMAND OPTIONS:\n\
     Each command has its own options. Use 'pkg <command> --help' to see them:\n\
     \x20 pkg env --help              Environment options (-s/--stamp, -e/--expand)\n\
-    \x20 pkg list --help             Filtering options (-L, --tags, --json)\n\
-    \x20 pkg graph --help            Graph options (--format, --depth)")]
+    \x20 pkg build --help            Build options (-b/--build-system)\n\
+    \x20 pkg search --help           Search options (-L, --tag, --json)")]
 pub struct Cli {
     /// Verbosity: -v (info), -vv (debug), -vvv (trace)
     #[arg(short = 'v', action = clap::ArgAction::Count, global = true)]
@@ -163,10 +162,242 @@ pub(crate) struct RezConfigArgs {
     pub(crate) field: Option<String>,
 }
 
+#[derive(Args, Debug, Clone)]
+pub(crate) struct SearchArgs {
+    /// Name patterns (glob: maya, cinem*, *_ext?)
+    pub(crate) patterns: Vec<String>,
+    /// Filter by tags (can repeat)
+    #[arg(short = 't', long = "tag")]
+    pub(crate) tags: Vec<String>,
+    /// Show only latest versions
+    #[arg(short = 'L', long)]
+    pub(crate) latest: bool,
+    /// Output as JSON
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct ViewArgs {
+    /// Package name
+    pub(crate) package: String,
+    /// Output as JSON
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct DependsArgs {
+    /// Package name(s)
+    pub(crate) packages: Vec<String>,
+    /// Output format: dot, mermaid, list
+    #[arg(short, long, default_value = "list")]
+    pub(crate) format: String,
+    /// Maximum depth (0 = unlimited)
+    #[arg(short, long, default_value = "0")]
+    pub(crate) depth: usize,
+    /// Show reverse dependencies
+    #[arg(short = 'R', long)]
+    pub(crate) reverse: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct DiffArgs {
+    /// Package to diff
+    pub(crate) pkg1: String,
+    /// Package to diff against (defaults to previous version)
+    pub(crate) pkg2: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct CpArgs {
+    /// Package repository destination path
+    #[arg(long = "dest-path")]
+    pub(crate) dest_path: Option<PathBuf>,
+    /// Package search paths (PATHS separated by os path separator)
+    #[arg(long = "paths")]
+    pub(crate) paths: Option<String>,
+    /// Don't search local packages
+    #[arg(long = "no-local", alias = "nl")]
+    pub(crate) no_local: bool,
+    /// Copy to a different package version
+    #[arg(long = "reversion")]
+    pub(crate) reversion: Option<String>,
+    /// Copy to a different package name
+    #[arg(long = "rename")]
+    pub(crate) rename: Option<String>,
+    /// Overwrite existing package/variants
+    #[arg(short = 'o', long = "overwrite")]
+    pub(crate) overwrite: bool,
+    /// Shallow copy (symlink top-level entries)
+    #[arg(short = 's', long = "shallow")]
+    pub(crate) shallow: bool,
+    /// Follow symlinks instead of copying symlink entries
+    #[arg(long = "follow-symlinks")]
+    pub(crate) follow_symlinks: bool,
+    /// Keep timestamp of source package
+    #[arg(short = 'k', long = "keep-timestamp")]
+    pub(crate) keep_timestamp: bool,
+    /// Copy even if not relocatable
+    #[arg(short = 'f', long = "force")]
+    pub(crate) force: bool,
+    /// Allow copying into empty repository
+    #[arg(long = "allow-empty")]
+    pub(crate) allow_empty: bool,
+    /// Dry run (no changes)
+    #[arg(long = "dry-run")]
+    pub(crate) dry_run: bool,
+    /// Select variants to copy (zero-indexed)
+    #[arg(long = "variants")]
+    pub(crate) variants: Vec<usize>,
+    /// Copy variant with given URI (not yet supported)
+    #[arg(long = "variant-uri")]
+    pub(crate) variant_uri: Option<String>,
+    /// Package to copy
+    pub(crate) pkg: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct MvArgs {
+    /// Package repository destination path
+    #[arg(short = 'd', long = "dest-path")]
+    pub(crate) dest_path: PathBuf,
+    /// Keep timestamp of source package
+    #[arg(short = 'k', long = "keep-timestamp")]
+    pub(crate) keep_timestamp: bool,
+    /// Move even if not relocatable
+    #[arg(short = 'f', long = "force")]
+    pub(crate) force: bool,
+    /// Package to move (name-version)
+    pub(crate) pkg: String,
+    /// Repository containing the package (optional)
+    pub(crate) path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct RmArgs {
+    /// Remove the specified package (name-version)
+    #[arg(short = 'p', long = "package")]
+    pub(crate) package: Option<String>,
+    /// Remove the specified package family (name only)
+    #[arg(short = 'f', long = "family")]
+    pub(crate) family: Option<String>,
+    /// Force remove package family even if not empty
+    #[arg(long = "force-family")]
+    pub(crate) force_family: bool,
+    /// Remove packages ignored for >= DAYS
+    #[arg(short = 'i', long = "ignored-since")]
+    pub(crate) ignored_since: Option<i64>,
+    /// Dry run mode (ignored-since only)
+    #[arg(long = "dry-run")]
+    pub(crate) dry_run: bool,
+    /// Repository containing the package(s)
+    pub(crate) path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct PkgIgnoreArgs {
+    /// Unignore a package
+    #[arg(short = 'u', long = "unignore")]
+    pub(crate) unignore: bool,
+    /// Allow ignoring missing packages
+    #[arg(short = 'a', long = "allow-missing")]
+    pub(crate) allow_missing: bool,
+    /// Package to (un)ignore (name-version)
+    pub(crate) pkg: String,
+    /// Repository containing the package (optional)
+    pub(crate) path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct PluginsArgs {
+    /// Package search paths (PATHS separated by os path separator)
+    #[arg(long = "paths")]
+    pub(crate) paths: Option<String>,
+    /// Package to list plugins for
+    pub(crate) pkg: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct PkgCacheArgs {
+    /// Clear cache file
+    #[arg(long = "clear")]
+    pub(crate) clear: bool,
+    /// Show cache stats
+    #[arg(long = "stats")]
+    pub(crate) stats: bool,
+    /// List cache entries
+    #[arg(long = "list")]
+    pub(crate) list: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct MemcacheArgs {
+    /// Clear resolve cache (if enabled)
+    #[arg(long = "clear")]
+    pub(crate) clear: bool,
+    /// Show memcache status
+    #[arg(long = "stats")]
+    pub(crate) stats: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct RezStubArgs {
+    /// Additional args passed to command (not implemented yet)
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub(crate) args: Vec<String>,
+}
+
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Run Python REPL or execute script with pkg module
-    #[command(name = "py")]
+    /// rez env
+    Env(EnvArgs),
+    /// rez build
+    Build(BuildArgs),
+    /// Spawn a build environment from build.rxt (internal)
+    #[command(name = "build-env", hide = true)]
+    BuildEnv {
+        /// Build directory containing build.rxt
+        #[arg(long = "build-path")]
+        build_path: PathBuf,
+        /// Variant index (optional)
+        #[arg(long = "variant-index")]
+        variant_index: Option<usize>,
+        /// Install flag (affects REZ_BUILD_INSTALL)
+        #[arg(long = "install")]
+        install: bool,
+        /// Install path (optional)
+        #[arg(long = "install-path")]
+        install_path: Option<PathBuf>,
+    },
+    /// rez pip
+    Pip(PipArgs),
+    /// rez bind
+    Bind(RezStubArgs),
+    /// rez config
+    Config(RezConfigArgs),
+    /// rez context
+    Context(RezStubArgs),
+    /// rez cp
+    Cp(CpArgs),
+    /// rez depends
+    Depends(DependsArgs),
+    /// rez diff
+    Diff(DiffArgs),
+    /// rez gui
+    Gui,
+    /// rez help
+    Help,
+    /// rez interpret
+    Interpret(RezStubArgs),
+    /// rez memcache
+    Memcache(MemcacheArgs),
+    /// rez pkg-cache
+    PkgCache(PkgCacheArgs),
+    /// rez plugins
+    Plugins(PluginsArgs),
+    /// rez python
+    #[command(name = "python", visible_alias = "py")]
     Python {
         /// Python script to run (omit for REPL)
         script: Option<PathBuf>,
@@ -174,7 +405,49 @@ pub enum Commands {
         #[arg(last = true)]
         args: Vec<String>,
     },
+    /// rez release
+    Release(RezStubArgs),
+    /// rez search
+    Search(SearchArgs),
+    /// rez selftest
+    Selftest(RezStubArgs),
+    /// rez status
+    Status(RezStubArgs),
+    /// rez suite
+    Suite(RezStubArgs),
+    /// rez test
+    Test(RezStubArgs),
+    /// rez view
+    View(ViewArgs),
+    /// rez yaml2py
+    Yaml2py(RezStubArgs),
+    /// rez bundle
+    Bundle(RezStubArgs),
+    /// rez benchmark
+    Benchmark(RezStubArgs),
+    /// rez pkg-ignore
+    PkgIgnore(PkgIgnoreArgs),
+    /// rez mv
+    Mv(MvArgs),
+    /// rez rm
+    Rm(RmArgs),
 
+    /// Show version and build info
+    Version,
+
+    /// Generate shell completions
+    Completions {
+        /// Shell type
+        shell: CompletionShell,
+    },
+
+    /// Legacy pkg-rs commands (hidden)
+    #[command(name = "legacy", hide = true, subcommand)]
+    Legacy(LegacyCommands),
+}
+
+#[derive(Subcommand)]
+pub(crate) enum LegacyCommands {
     /// List available packages
     #[command(visible_alias = "ls")]
     List {
@@ -200,36 +473,6 @@ pub enum Commands {
         json: bool,
     },
 
-    /// Setup environment and optionally run command
-    Env(EnvArgs),
-
-    /// Build package in current directory
-    Build(BuildArgs),
-
-    /// Spawn a build environment from build.rxt (internal)
-    #[command(name = "build-env", hide = true)]
-    BuildEnv {
-        /// Build directory containing build.rxt
-        #[arg(long = "build-path")]
-        build_path: PathBuf,
-        /// Variant index (optional)
-        #[arg(long = "variant-index")]
-        variant_index: Option<usize>,
-        /// Install flag (affects REZ_BUILD_INSTALL)
-        #[arg(long = "install")]
-        install: bool,
-        /// Install path (optional)
-        #[arg(long = "install-path")]
-        install_path: Option<PathBuf>,
-    },
-
-    /// Install a pip package into a repository
-    Pip(PipArgs),
-
-    /// Rez-compatible command group (rez env/build/pip/...)
-    #[command(name = "rez", subcommand)]
-    Rez(RezCommands),
-
     /// Show dependency graph
     Graph {
         /// Package name(s)
@@ -252,7 +495,7 @@ pub enum Commands {
     },
 
     /// Generate test repository with random packages
-    #[command(name = "gen-repo", after_help = 
+    #[command(name = "gen-repo", after_help =
         "PRESETS:\n  \
         --small   10 packages x 2 versions = 20 nodes\n  \
         --medium  50 packages x 3 versions = 150 nodes [default]\n  \
@@ -295,127 +538,16 @@ pub enum Commands {
     /// Generate package.py template
     #[command(name = "gen-pkg")]
     GenPkg {
-        /// Package identifier: name-version[--variant]
-        /// Examples: maya-2026.1.0, maya-2026.1.0--win64
+        /// Package identifier: name-version[--variant] (version starts at first `-` + digit)
+        /// Examples: maya-2026.1.0, my-plugin-1.0.0, maya-2026.1.0--win64
         package_id: String,
     },
-
-    /// Show version and build info
-    Version,
 
     /// Interactive shell with tab-completion
     #[command(visible_alias = "sh")]
     Shell,
 
-    /// Generate shell completions
-    Completions {
-        /// Shell type
-        shell: CompletionShell,
-    },
-
     /// Launch graphical interface
     #[command(name = "gui")]
     Gui,
-}
-
-#[derive(Subcommand, Debug)]
-#[command(disable_help_subcommand = true)]
-pub(crate) enum RezCommands {
-    /// rez env
-    Env(EnvArgs),
-    /// rez build
-    Build(BuildArgs),
-    /// rez pip
-    Pip(PipArgs),
-    /// rez bind
-    #[command(name = "bind")]
-    Bind(RezStubArgs),
-    /// rez config
-    #[command(name = "config")]
-    Config(RezConfigArgs),
-    /// rez context
-    #[command(name = "context")]
-    Context(RezStubArgs),
-    /// rez cp
-    #[command(name = "cp")]
-    Cp(RezStubArgs),
-    /// rez depends
-    #[command(name = "depends")]
-    Depends(RezStubArgs),
-    /// rez diff
-    #[command(name = "diff")]
-    Diff(RezStubArgs),
-    /// rez gui
-    #[command(name = "gui")]
-    Gui(RezStubArgs),
-    /// rez help
-    #[command(name = "help")]
-    Help(RezStubArgs),
-    /// rez interpret
-    #[command(name = "interpret")]
-    Interpret(RezStubArgs),
-    /// rez memcache
-    #[command(name = "memcache")]
-    Memcache(RezStubArgs),
-    /// rez pkg-cache
-    #[command(name = "pkg-cache")]
-    PkgCache(RezStubArgs),
-    /// rez plugins
-    #[command(name = "plugins")]
-    Plugins(RezStubArgs),
-    /// rez python
-    #[command(name = "python")]
-    Python(RezStubArgs),
-    /// rez release
-    #[command(name = "release")]
-    Release(RezStubArgs),
-    /// rez search
-    #[command(name = "search")]
-    Search(RezStubArgs),
-    /// rez selftest
-    #[command(name = "selftest")]
-    Selftest(RezStubArgs),
-    /// rez status
-    #[command(name = "status")]
-    Status(RezStubArgs),
-    /// rez suite
-    #[command(name = "suite")]
-    Suite(RezStubArgs),
-    /// rez test
-    #[command(name = "test")]
-    Test(RezStubArgs),
-    /// rez view
-    #[command(name = "view")]
-    View(RezStubArgs),
-    /// rez yaml2py
-    #[command(name = "yaml2py")]
-    Yaml2py(RezStubArgs),
-    /// rez bundle
-    #[command(name = "bundle")]
-    Bundle(RezStubArgs),
-    /// rez benchmark
-    #[command(name = "benchmark")]
-    Benchmark(RezStubArgs),
-    /// rez pkg-ignore
-    #[command(name = "pkg-ignore")]
-    PkgIgnore(RezStubArgs),
-    /// rez mv
-    #[command(name = "mv")]
-    Mv(RezStubArgs),
-    /// rez rm
-    #[command(name = "rm")]
-    Rm(RezStubArgs),
-    /// rez _rez-complete (placeholder)
-    #[command(name = "_rez-complete")]
-    Complete(RezStubArgs),
-    /// rez _rez_fwd (placeholder)
-    #[command(name = "_rez_fwd")]
-    Forward(RezStubArgs),
-}
-
-#[derive(Args, Debug)]
-pub(crate) struct RezStubArgs {
-    /// Additional args passed to rez-* (not implemented yet)
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    pub(crate) args: Vec<String>,
 }

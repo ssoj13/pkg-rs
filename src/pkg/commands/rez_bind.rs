@@ -12,7 +12,8 @@ pub fn cmd_rez_bind(args: &RezStubArgs) -> ExitCode {
     let parsed = parse_bind_args(&args.args);
     if !parsed.quickstart {
         if parsed.list || parsed.search {
-            return super::cmd_rez_passthrough("bind", &args.args);
+            eprintln!("rez bind: --list/--search not implemented yet");
+            return ExitCode::FAILURE;
         }
 
         if parsed.unknown.is_empty() {
@@ -23,11 +24,13 @@ pub fn cmd_rez_bind(args: &RezStubArgs) -> ExitCode {
             }
         }
 
-        return super::cmd_rez_passthrough("bind", &args.args);
+        eprintln!("rez bind: unsupported arguments: {:?}", parsed.unknown);
+        return ExitCode::FAILURE;
     }
 
     if parsed.list || parsed.search {
-        return super::cmd_rez_passthrough("bind", &args.args);
+        eprintln!("rez bind --quickstart: --list/--search not implemented yet");
+        return ExitCode::FAILURE;
     }
 
     cmd_quickstart(parsed)

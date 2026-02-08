@@ -184,8 +184,8 @@ impl DepSpec {
     /// Only works if this is an exact version constraint.
     /// Returns None if constraint is a range.
     pub fn to_resolved_str(&self) -> Option<String> {
-        if self.is_exact() {
-            Some(format!("{}-{}", self.base, self.constraint))
+        if let Some(ver) = self.exact_version() {
+            Some(format!("{}-{}", self.base, ver))
         } else {
             None
         }
@@ -437,6 +437,11 @@ mod tests {
         assert_eq!(spec.base, "myplugin");
         assert_eq!(spec.constraint, "1.0.0");
         assert!(!spec.is_exact());
+
+        // Hyphenated package name should still split at hyphen-digit
+        let spec2 = DepSpec::parse_impl("my-plugin-1.0.0").unwrap();
+        assert_eq!(spec2.base, "my-plugin");
+        assert_eq!(spec2.constraint, "1.0.0");
     }
 
     #[test]
@@ -498,7 +503,7 @@ mod tests {
         assert!(DepSpec::parse_impl("").is_err());
 
         // Invalid constraint
-        assert!(DepSpec::parse_impl("pkg@invalid").is_err());
+        assert!(DepSpec::parse_impl("pkg@1..").is_err());
 
         // Empty base
         assert!(DepSpec::parse_impl("@1.0.0").is_err());
