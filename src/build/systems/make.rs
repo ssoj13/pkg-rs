@@ -25,9 +25,11 @@ impl BuildSystem for MakeBuildSystem {
         argv.extend(args.build_args.iter().cloned());
 
         if !argv.iter().any(|a| a.starts_with("-j")) {
-            let thread_count = std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(1);
+            let thread_count = thread_count_from_env(ctx.env).unwrap_or_else(|| {
+                std::thread::available_parallelism()
+                    .map(|n| n.get())
+                    .unwrap_or(1)
+            });
             argv.insert(0, format!("-j{}", thread_count));
         }
 
@@ -51,4 +53,9 @@ impl BuildSystem for MakeBuildSystem {
 
         super::super::run_command("make", &["install".to_string()], make_dir, ctx.env)
     }
+}
+
+fn thread_count_from_env(env: &std::collections::HashMap<String, String>) -> Option<usize> {
+    let raw = env.get("REZ_BUILD_THREAD_COUNT")?;
+    raw.trim().parse::<usize>().ok()
 }

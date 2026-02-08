@@ -165,9 +165,11 @@ impl BuildSystem for CmakeBuildSystem {
         let build_root_abs = abs_path(ctx.build_dir);
 
         let mut build_cmd_args = vec!["--build".to_string(), build_root_abs.display().to_string()];
-        let thread_count = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1);
+        let thread_count = thread_count_from_env(ctx.env).unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+        });
         build_cmd_args.push("--parallel".to_string());
         build_cmd_args.push(thread_count.to_string());
 
@@ -344,4 +346,9 @@ fn warn_if_missing_windows_sdk(ctx: &BuildContext<'_>, generator: &str) {
             "Warning: Windows SDK libs not found in LIB. Run from a Visual Studio Developer Command Prompt or set WindowsSdkDir/VCINSTALLDIR."
         );
     }
+}
+
+fn thread_count_from_env(env: &std::collections::HashMap<String, String>) -> Option<usize> {
+    let raw = env.get("REZ_BUILD_THREAD_COUNT")?;
+    raw.trim().parse::<usize>().ok()
 }

@@ -48,16 +48,22 @@
 
 mod provider;
 mod ranges;
+mod filter;
+mod order;
 
 use crate::dep::DepSpec;
 use crate::error::SolverError;
 use crate::package::Package;
 use crate::py::ensure_rez_on_sys_path;
+use crate::{config, plugins};
+use filter::PackageFilterList;
 use log::{debug, info};
+use order::{PackageEntry, PackageOrderList};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use semver::Version;
 use std::collections::HashMap;
+
+use crate::rez_version::Version;
 
 // Re-export PubGrub provider for advanced usage
 pub use provider::PubGrubProvider;
@@ -71,7 +77,12 @@ pub enum ResolverBackend {
 }
 
 pub fn selected_backend() -> Result<ResolverBackend, SolverError> {
-    if let Ok(config) = crate::config::get() {
+    let cfg = config::get().ok();
+    selected_backend_for(cfg.as_deref())
+}
+
+pub fn selected_backend_for(cfg: Option<&config::Config>) -> Result<ResolverBackend, SolverError> {
+    if let Some(config) = cfg {
         if let Some(raw) = crate::config::resolver_backend(config) {
             let name = raw.trim().to_ascii_lowercase();
             return match name.as_str() {
@@ -88,9 +99,35 @@ pub fn solve_reqs_backend(
     packages: &[Package],
     requirements: Vec<String>,
 ) -> Result<Vec<String>, SolverError> {
-    match selected_backend()? {
+    let cfg = config::get().ok();
+    solve_reqs_backend_with_config(packages, requirements, cfg.as_deref())
+}
+
+pub fn solve_reqs_backend_with_config(
+    packages: &[Package],
+    requirements: Vec<String>,
+    cfg: Option<&config::Config>,
+) -> Result<Vec<String>, SolverError> {
+    match selected_backend_for(cfg)? {
         ResolverBackend::Pkg => {
-            let solver = Solver::from_packages(packages)?;
+            let plugin_config = plugins::PluginConfig::from_config(cfg);
+            let package_filter = if plugins::is_enabled(&plugin_config.package_filters, "builtin") {
+                PackageFilterList::from_config(cfg)?
+            } else {
+                None
+            };
+            let package_orderers = if plugins::is_enabled(&plugin_config.package_orderers, "builtin") {
+                PackageOrderList::from_config(cfg)?
+            } else {
+                None
+            };
+
+            let index = PackageIndex::from_packages_with_prefs(
+                packages,
+                package_filter.as_ref(),
+                package_orderers.as_ref(),
+            )?;
+            let solver = Solver::from_index(index);
             solver.solve_requirements_impl(&requirements)
         }
         ResolverBackend::Rez => solve_reqs_rez(&requirements),
@@ -128,8 +165,9 @@ fn solve_reqs_rez(requirements: &[String]) -> Result<Vec<String>, SolverError> {
         message: format!("failed to load rez config: {e}"),
     })?;
     let filepaths = filepaths
-        .filepaths
+        .sourced_filepaths
         .iter()
+        .filter(|p| p.exists())
         .map(|p| p.to_string_lossy().to_string())
         .collect::<Vec<_>>();
 
@@ -267,8 +305,8 @@ fn solve_reqs_rez(requirements: &[String]) -> Result<Vec<String>, SolverError> {
 /// Built from Storage's package list.
 #[derive(Debug, Clone, Default)]
 pub struct PackageIndex {
-    /// Map: base name -> sorted list of (version, dependencies)
-    packages: HashMap<String, Vec<(Version, Vec<DepSpec>)>>,
+    /// Map: base name -> ordered list of versions
+    packages: HashMap<String, Vec<PackageEntry>>,
 }
 
 impl PackageIndex {
@@ -277,6 +315,36 @@ impl PackageIndex {
         Self {
             packages: HashMap::new(),
         }
+    }
+
+    /// Build a package index with optional filter/orderers.
+    pub fn from_packages_with_prefs(
+        packages: &[Package],
+        package_filter: Option<&PackageFilterList>,
+        package_orderers: Option<&PackageOrderList>,
+    ) -> Result<Self, SolverError> {
+        let mut index = Self::new();
+
+        for pkg in packages {
+            if let Some(filter) = package_filter {
+                if filter.excludes(pkg) {
+                    continue;
+                }
+            }
+            index.add(pkg)?;
+        }
+
+        if let Some(orderers) = package_orderers {
+            let keys: Vec<String> = index.packages.keys().cloned().collect();
+            for base in keys {
+                if let Some(entries) = index.packages.get_mut(&base) {
+                    let ordered = orderers.reorder(&base, entries);
+                    *entries = ordered;
+                }
+            }
+        }
+
+        Ok(index)
     }
 
     /// Add a package to the index.
@@ -302,11 +370,15 @@ impl PackageIndex {
         self.packages
             .entry(pkg.base.clone())
             .or_default()
-            .push((version, deps));
+            .push(PackageEntry {
+                version,
+                deps,
+                timestamp: pkg.timestamp,
+            });
 
         // Sort versions descending (newest first)
         if let Some(versions) = self.packages.get_mut(&pkg.base) {
-            versions.sort_by(|a, b| b.0.cmp(&a.0));
+            versions.sort_by(|a, b| b.version.cmp(&a.version));
         }
 
         Ok(())
@@ -316,7 +388,7 @@ impl PackageIndex {
     pub fn versions(&self, base: &str) -> Vec<&Version> {
         self.packages
             .get(base)
-            .map(|v| v.iter().map(|(ver, _)| ver).collect())
+            .map(|v| v.iter().map(|entry| &entry.version).collect())
             .unwrap_or_default()
     }
 
@@ -325,8 +397,8 @@ impl PackageIndex {
         self.packages.get(base).and_then(|versions| {
             versions
                 .iter()
-                .find(|(v, _)| v == version)
-                .map(|(_, deps)| deps)
+                .find(|entry| entry.version == *version)
+                .map(|entry| &entry.deps)
         })
     }
 
@@ -344,9 +416,12 @@ impl PackageIndex {
     pub fn find_match(&self, spec: &DepSpec) -> Option<Version> {
         let versions = self.packages.get(&spec.base)?;
 
-        for (version, _) in versions {
-            if spec.matches_impl(&version.to_string()).unwrap_or(false) {
-                return Some(version.clone());
+        for entry in versions {
+            if spec
+                .matches_impl(&entry.version.to_string())
+                .unwrap_or(false)
+            {
+                return Some(entry.version.clone());
             }
         }
 
@@ -382,12 +457,7 @@ impl Solver {
     /// * `packages` - List of Package objects
     #[new]
     pub fn new(packages: Vec<Package>) -> PyResult<Self> {
-        let mut index = PackageIndex::new();
-
-        for pkg in packages {
-            index.add(&pkg)?;
-        }
-
+        let index = PackageIndex::from_packages_with_prefs(&packages, None, None)?;
         Ok(Self { index })
     }
 
@@ -443,10 +513,7 @@ impl Solver {
 impl Solver {
     /// Create solver from package slice (borrows, doesn't consume).
     pub fn from_packages(packages: &[Package]) -> Result<Self, SolverError> {
-        let mut index = PackageIndex::new();
-        for pkg in packages {
-            index.add(pkg)?;
-        }
+        let index = PackageIndex::from_packages_with_prefs(packages, None, None)?;
         Ok(Self { index })
     }
 
@@ -543,7 +610,7 @@ impl Solver {
         let provider = PubGrubProvider::with_root_deps(&self.index, &specs);
 
         // Resolve from virtual root (version 0.0.0)
-        match pubgrub::resolve(&provider, "__root__".to_string(), Version::new(0, 0, 0)) {
+        match pubgrub::resolve(&provider, "__root__".to_string(), Version::empty()) {
             Ok(solution) => {
                 // Filter out virtual root, convert to package names
                 let mut result: Vec<String> = solution

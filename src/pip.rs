@@ -955,7 +955,7 @@ fn map_record_path(
         }
 
         return Err(PipError::Config(format!(
-            "unknown RECORD path: {} (set plugins.pkg_rs.pip_install_remaps)",
+            "unknown RECORD path: {} (set pip_install_remaps)",
             rel
         )));
     }

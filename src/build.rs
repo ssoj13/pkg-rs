@@ -5,6 +5,8 @@
 //! the resulting package to a repository layout. This module follows Rez
 //! semantics for variants and build environment variables.
 
+use crate::config;
+use crate::plugins;
 use crate::dep::DepSpec;
 use crate::error::BuildError;
 use crate::{Env, Evar, Package, Storage};
@@ -15,6 +17,7 @@ use systems::{BuildContext, BuildPhase, BuildSystemArgs, BuildSystemRegistry};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 use sha1::{Digest, Sha1};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -71,6 +74,8 @@ pub struct BuildReport {
     pub build_root: PathBuf,
     /// Install directory if install was requested.
     pub install_path: Option<PathBuf>,
+    /// Build env scripts created (when --scripts).
+    pub build_env_scripts: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -165,12 +170,18 @@ pub fn build_package(
     storage: &Storage,
     options: &BuildOptions,
 ) -> Result<BuildReport, BuildError> {
+    let config = effective_build_config(package)?;
+
     let source_dir = package_path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
 
-    let build_root = resolve_build_root(source_dir, package.build_directory.as_deref());
+    let build_root = resolve_build_root(
+        source_dir,
+        package.build_directory.as_deref(),
+        config.as_ref(),
+    );
 
     let package_install_root = if options.install {
         Some(resolve_install_path(
@@ -178,12 +189,15 @@ pub fn build_package(
             options.prefix.as_ref(),
             package,
             options.build_type,
+            config.as_ref(),
         )?)
     } else {
         None
     };
 
-    let registry = BuildSystemRegistry::new();
+    let plugin_config = plugins::PluginConfig::from_config(config.as_ref());
+    ensure_build_process_enabled(options.build_type, &plugin_config)?;
+    let registry = BuildSystemRegistry::new(&plugin_config.build_systems);
     let build_system = resolve_build_system(
         package,
         source_dir,
@@ -199,6 +213,7 @@ pub fn build_package(
     let selected_variants = select_variants(&all_variants, &options.variants)?;
 
     let mut built_variants = 0;
+    let mut build_env_scripts = Vec::new();
 
     for variant in selected_variants {
         let variant_build_path = variant_build_path(&build_root, &variant);
@@ -247,6 +262,7 @@ pub fn build_package(
             package_path,
             &rxt_path,
             options.build_type,
+            config.as_ref(),
         )?;
 
         apply_pre_build_commands(
@@ -257,6 +273,7 @@ pub fn build_package(
             &variant_build_path,
             variant_install_path.as_ref(),
             options.build_type,
+            config.as_ref(),
         )?;
 
         let solved_env = env
@@ -296,11 +313,13 @@ pub fn build_package(
             &requested,
             &resolved,
             &env_map,
+            config.as_ref(),
+            &plugin_config,
         )?;
         write_variant_marker(&variant, &variant_build_path)?;
 
         if options.scripts {
-            write_build_scripts(
+            let scripts = write_build_scripts(
                 &variant_build_path,
                 &script_env,
                 &BuildEnvScriptMeta {
@@ -309,7 +328,10 @@ pub fn build_package(
                     install: options.install,
                     install_path: variant_install_path.clone(),
                 },
+                &plugin_config,
             )?;
+            build_env_scripts.extend(scripts);
+            built_variants += 1;
             continue;
         }
 
@@ -356,10 +378,15 @@ pub fn build_package(
         built_variants += 1;
     }
 
+    if options.install && options.build_type == BuildType::Central {
+        warn_release_hooks(config.as_ref(), &plugin_config);
+    }
+
     Ok(BuildReport {
         built_variants,
         build_root,
         install_path: package_install_root,
+        build_env_scripts,
     })
 }
 
@@ -482,8 +509,31 @@ fn variant_install_path(package_root: &Path, variant: &BuildVariant) -> PathBuf 
     }
 }
 
-fn resolve_build_root(source_dir: &Path, build_directory: Option<&str>) -> PathBuf {
-    let build_dir = build_directory.unwrap_or("build");
+fn effective_build_config(package: &Package) -> Result<Option<config::Config>, BuildError> {
+    let base = match config::get() {
+        Ok(cfg) => cfg.clone(),
+        Err(_) => return Ok(None),
+    };
+
+    if let Some(override_value) = package.config.as_ref() {
+        let merged = config::apply_package_override(&base, override_value)
+            .map_err(|e| BuildError::Config(e.to_string()))?;
+        Ok(Some(merged))
+    } else {
+        Ok(Some(base))
+    }
+}
+
+fn resolve_build_root(
+    source_dir: &Path,
+    build_directory: Option<&str>,
+    config: Option<&config::Config>,
+) -> PathBuf {
+    let config_dir = config.and_then(|cfg| config::get_str(cfg, "build_directory"));
+    let build_dir = build_directory
+        .map(|s| s.to_string())
+        .or(config_dir)
+        .unwrap_or_else(|| "build".to_string());
     let build_path = PathBuf::from(build_dir);
     if build_path.is_absolute() {
         build_path
@@ -497,18 +547,8 @@ fn resolve_install_path(
     prefix: Option<&PathBuf>,
     package: &Package,
     build_type: BuildType,
+    config: Option<&config::Config>,
 ) -> Result<PathBuf, BuildError> {
-    let base_config = crate::config::get().ok().cloned();
-    let config = if let (Some(base), Some(override_value)) =
-        (base_config.as_ref(), package.config.as_ref())
-    {
-        Some(
-            crate::config::apply_package_override(base, override_value)
-                .map_err(|e| BuildError::Config(e.to_string()))?,
-        )
-    } else {
-        base_config
-    };
     let config_paths = config
         .as_ref()
         .map(|cfg| crate::config::packages_path(cfg))
@@ -546,6 +586,45 @@ fn resolve_install_path(
     Ok(repo_root.join(&package.base).join(&package.version))
 }
 
+fn build_python_paths(config: Option<&config::Config>) -> Vec<String> {
+    let value = config.and_then(|cfg| config::get_json(cfg, "package_definition_build_python_paths"));
+    value.map(|v| plugins::list_from_json(&v)).unwrap_or_default()
+}
+
+fn build_thread_count(config: Option<&config::Config>) -> usize {
+    if let Some(cfg) = config {
+        if let Some(value) = config::get_json(cfg, "build_thread_count") {
+            if let Some(count) = parse_build_thread_count(&value) {
+                return count.max(1);
+            }
+        }
+    }
+
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+}
+
+fn parse_build_thread_count(value: &JsonValue) -> Option<usize> {
+    match value {
+        JsonValue::Number(num) => num.as_u64().map(|v| v as usize),
+        JsonValue::String(text) => {
+            let raw = text.trim().to_ascii_lowercase();
+            if raw == "logical_cores" {
+                return Some(num_cpus::get());
+            }
+            if raw == "physical_cores" {
+                return Some(num_cpus::get_physical());
+            }
+            if raw == "cpu_count" {
+                return Some(num_cpus::get());
+            }
+            raw.parse::<usize>().ok()
+        }
+        _ => None,
+    }
+}
+
 fn resolve_build_system<'a>(
     package: &Package,
     source_dir: &Path,
@@ -555,19 +634,19 @@ fn resolve_build_system<'a>(
     if let Some(name) = override_name {
         return registry
             .by_name(name)
-            .ok_or_else(|| BuildError::Config(format!("unsupported build system: {}", name)));
+            .ok_or_else(|| build_system_disabled_error(name, registry));
     }
 
     if package.build_command.is_some() {
         return registry.by_name("custom").ok_or_else(|| {
-            BuildError::Config("custom build system is not registered".to_string())
+            build_system_disabled_error("custom", registry)
         });
     }
 
     if let Some(name) = package.build_system.as_deref() {
         return registry
             .by_name(name)
-            .ok_or_else(|| BuildError::Config(format!("unsupported build system: {}", name)));
+            .ok_or_else(|| build_system_disabled_error(name, registry));
     }
 
     if let Some(system) = registry.detect(source_dir) {
@@ -579,6 +658,38 @@ fn resolve_build_system<'a>(
     ))
 }
 
+fn build_system_disabled_error(name: &str, registry: &BuildSystemRegistry) -> BuildError {
+    let enabled = registry.enabled_names();
+    let enabled_txt = if enabled.is_empty() {
+        "none".to_string()
+    } else {
+        enabled.join(", ")
+    };
+    BuildError::Config(format!(
+        "build system '{}' is not enabled (enabled: {}). Set plugins.pkg_rs.build_systems in rezconfig.py",
+        name, enabled_txt
+    ))
+}
+
+fn ensure_build_process_enabled(
+    build_type: BuildType,
+    plugin_config: &plugins::PluginConfig,
+) -> Result<(), BuildError> {
+    let name = build_type.as_str();
+    if plugins::is_enabled(&plugin_config.build_processes, name) {
+        return Ok(());
+    }
+    Err(BuildError::Config(format!(
+        "build process '{}' is not enabled (enabled: {}). Set plugins.pkg_rs.build_processes in rezconfig.py",
+        name,
+        if plugin_config.build_processes.is_empty() {
+            "none".to_string()
+        } else {
+            plugin_config.build_processes.join(", ")
+        }
+    )))
+}
+
 fn create_build_env(
     package: &Package,
     storage: &Storage,
@@ -588,6 +699,7 @@ fn create_build_env(
     package_path: &Path,
     rxt_path: &Path,
     build_type: BuildType,
+    config: Option<&config::Config>,
 ) -> Result<BuildEnvResult, BuildError> {
     let mut requested = Vec::new();
     // Rez order: requires + variant requires, then build/private build requires.
@@ -621,6 +733,7 @@ fn create_build_env(
         &requested,
         rxt_path,
         build_type,
+        config,
     );
     for (key, value) in build_vars {
         env.add(Evar::set(key, value));
@@ -653,10 +766,9 @@ fn build_env_vars(
     requested: &[String],
     rxt_path: &Path,
     build_type: BuildType,
+    config: Option<&config::Config>,
 ) -> HashMap<String, String> {
-    let thread_count = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1);
+    let thread_count = build_thread_count(config);
 
     let build_path_abs = build_path
         .canonicalize()
@@ -784,6 +896,8 @@ fn write_build_rxt(
     requested: &[String],
     resolved: &[ResolvedPackageSnapshot],
     env: &HashMap<String, String>,
+    config: Option<&config::Config>,
+    plugin_config: &plugins::PluginConfig,
 ) -> Result<(), BuildError> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -807,6 +921,9 @@ fn write_build_rxt(
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "pkg".to_string());
 
+    let package_filter = package_filter_pod(config, plugin_config);
+    let package_orderers = package_orderers_pod(config, plugin_config);
+
     let snapshot = ResolvedContextSnapshot {
         serialize_version: "4.9".to_string(),
         timestamp,
@@ -826,8 +943,8 @@ fn write_build_rxt(
         package_cache_async: false,
         default_patch_lock: "no_lock".to_string(),
         patch_locks: HashMap::new(),
-        package_orderers: None,
-        package_filter: Vec::new(),
+        package_orderers,
+        package_filter,
         graph: "{}".to_string(),
         resolved_packages,
         resolved_ephemerals: Vec::new(),
@@ -854,6 +971,66 @@ fn write_build_rxt(
         .map_err(|e| BuildError::Config(e.to_string()))?;
     std::fs::write(rxt_path, content)?;
     Ok(())
+}
+
+fn package_filter_pod(
+    config: Option<&config::Config>,
+    plugin_config: &plugins::PluginConfig,
+) -> Vec<JsonValue> {
+    if !plugins::is_enabled(&plugin_config.package_filters, "builtin") {
+        return Vec::new();
+    }
+
+    let value = config.and_then(|cfg| config::get_json(cfg, "package_filter"));
+    match value {
+        None => Vec::new(),
+        Some(JsonValue::Null) => Vec::new(),
+        Some(JsonValue::Array(items)) => items,
+        Some(JsonValue::Object(map)) => vec![JsonValue::Object(map)],
+        _ => Vec::new(),
+    }
+}
+
+fn package_orderers_pod(
+    config: Option<&config::Config>,
+    plugin_config: &plugins::PluginConfig,
+) -> Option<JsonValue> {
+    if !plugins::is_enabled(&plugin_config.package_orderers, "builtin") {
+        return None;
+    }
+
+    let value = config.and_then(|cfg| config::get_json(cfg, "package_orderers"));
+    match value {
+        None => None,
+        Some(JsonValue::Null) => None,
+        Some(JsonValue::Array(items)) => Some(JsonValue::Array(items)),
+        Some(JsonValue::Object(map)) => Some(JsonValue::Array(vec![JsonValue::Object(map)])),
+        _ => None,
+    }
+}
+
+fn warn_release_hooks(config: Option<&config::Config>, plugin_config: &plugins::PluginConfig) {
+    if !plugins::is_enabled(&plugin_config.release_hooks, "builtin") {
+        return;
+    }
+
+    let Some(cfg) = config else {
+        return;
+    };
+
+    let raw = config::get_json(cfg, "release_hooks");
+    let Some(raw) = raw else {
+        return;
+    };
+    let hooks = plugins::list_from_json(&raw);
+    if hooks.is_empty() {
+        return;
+    }
+
+    eprintln!(
+        "Warning: release hooks configured ({}), but release hooks are not implemented yet",
+        hooks.join(", ")
+    );
 }
 
 fn build_variant_handle(
@@ -936,14 +1113,35 @@ fn create_variant_shortlink(
 }
 
 fn use_variant_shortlinks() -> bool {
-    std::env::var("PKG_USE_VARIANT_SHORTLINKS")
-        .ok()
-        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
-        .unwrap_or(false)
+    if let Ok(value) = std::env::var("PKG_USE_VARIANT_SHORTLINKS") {
+        return matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes");
+    }
+
+    if let Ok(cfg) = config::get() {
+        if let Some(value) = config::get_bool(cfg, "use_variant_shortlinks") {
+            return value;
+        }
+    }
+
+    false
 }
 
 fn variant_shortlinks_dirname() -> String {
-    std::env::var("PKG_VARIANT_SHORTLINKS_DIRNAME").unwrap_or_else(|_| "_v".to_string())
+    if let Ok(value) = std::env::var("PKG_VARIANT_SHORTLINKS_DIRNAME") {
+        if !value.trim().is_empty() {
+            return value;
+        }
+    }
+
+    if let Ok(cfg) = config::get() {
+        if let Some(value) = config::get_str(cfg, "variant_shortlinks_dirname") {
+            if !value.trim().is_empty() {
+                return value;
+            }
+        }
+    }
+
+    "_v".to_string()
 }
 
 fn create_unique_base26_symlink(path: &Path, target: &Path) -> Result<PathBuf, BuildError> {
@@ -1047,45 +1245,74 @@ fn get_next_base26(prev: Option<&str>) -> Result<String, BuildError> {
     Ok(format!("{}a", get_next_base26(Some(prefix))?))
 }
 
+struct ShellScriptTargets {
+    cmd: bool,
+    ps1: bool,
+    sh: bool,
+}
+
+fn shell_script_targets(plugin_config: &plugins::PluginConfig) -> ShellScriptTargets {
+    let shells = &plugin_config.shells;
+    let cmd = plugins::is_enabled(shells, "cmd");
+    let ps1 = plugins::is_enabled(shells, "powershell")
+        || plugins::is_enabled(shells, "pwsh");
+    let sh = plugins::is_enabled(shells, "bash")
+        || plugins::is_enabled(shells, "sh")
+        || plugins::is_enabled(shells, "zsh")
+        || plugins::is_enabled(shells, "csh")
+        || plugins::is_enabled(shells, "tcsh")
+        || plugins::is_enabled(shells, "gitbash");
+
+    ShellScriptTargets { cmd, ps1, sh }
+}
+
 fn write_build_scripts(
     build_root: &Path,
     env: &Env,
     meta: &BuildEnvScriptMeta,
-) -> Result<(), BuildError> {
-    let cmd_path = build_root.join("build_env.cmd");
-    let ps1_path = build_root.join("build_env.ps1");
-    let sh_path = build_root.join("build_env.sh");
+    plugin_config: &plugins::PluginConfig,
+) -> Result<Vec<PathBuf>, BuildError> {
+    let targets = shell_script_targets(plugin_config);
     let forward_path = build_root.join("build-env");
 
-    let cmd_body = format!(
-        "@echo off\r\ncd /d \"{}\"\r\n{}\r\n",
-        build_root.display(),
-        env.to_cmd()
-    );
-    let ps1_body = format!(
-        "Set-Location -Path \"{}\"\n{}\n",
-        build_root.display(),
-        env.to_ps1()
-    );
-    let sh_body = format!(
-        "#!/usr/bin/env bash\ncd \"{}\"\n{}\n",
-        build_root.display(),
-        env.to_sh()
-    );
+    if targets.cmd {
+        let cmd_path = build_root.join("build_env.cmd");
+        let cmd_body = format!(
+            "@echo off\r\ncd /d \"{}\"\r\n{}\r\n",
+            build_root.display(),
+            env.to_cmd()
+        );
+        std::fs::write(cmd_path, cmd_body)?;
+    }
 
-    std::fs::write(cmd_path, cmd_body)?;
-    std::fs::write(ps1_path, ps1_body)?;
-    std::fs::write(sh_path, sh_body)?;
+    if targets.ps1 {
+        let ps1_path = build_root.join("build_env.ps1");
+        let ps1_body = format!(
+            "Set-Location -Path \"{}\"\n{}\n",
+            build_root.display(),
+            env.to_ps1()
+        );
+        std::fs::write(ps1_path, ps1_body)?;
+    }
 
-    write_build_env_forwarder(&forward_path, meta)?;
+    if targets.sh {
+        let sh_path = build_root.join("build_env.sh");
+        let sh_body = format!(
+            "#!/usr/bin/env bash\ncd \"{}\"\n{}\n",
+            build_root.display(),
+            env.to_sh()
+        );
+        std::fs::write(sh_path, sh_body)?;
+    }
 
-    Ok(())
+    let forwarders = write_build_env_forwarder(&forward_path, meta)?;
+    Ok(forwarders)
 }
 
 fn write_build_env_forwarder(
     path: &Path,
     meta: &BuildEnvScriptMeta,
-) -> Result<(), BuildError> {
+) -> Result<Vec<PathBuf>, BuildError> {
     let exe = std::env::current_exe().map_err(BuildError::Io)?;
     let exe_str = exe.display().to_string();
 
@@ -1119,7 +1346,8 @@ fn write_build_env_forwarder(
             .collect::<Vec<_>>()
             .join(" ");
         let body = format!("@echo off\r\n{}\r\n", cmd_line);
-        std::fs::write(cmd_path, body)?;
+        std::fs::write(&cmd_path, body)?;
+        return Ok(vec![cmd_path]);
     } else {
         let cmd_line = std::iter::once(shell_quote(&exe_str))
             .chain(args.iter().map(|a| shell_quote(a)))
@@ -1134,9 +1362,8 @@ fn write_build_env_forwarder(
             perms.set_mode(0o755);
             std::fs::set_permissions(path, perms)?;
         }
+        return Ok(vec![path.to_path_buf()]);
     }
-
-    Ok(())
 }
 
 fn run_command(
@@ -1390,10 +1617,13 @@ fn apply_pre_build_commands(
     build_path: &Path,
     install_path: Option<&PathBuf>,
     build_type: BuildType,
+    config: Option<&config::Config>,
 ) -> Result<(), BuildError> {
     let Some(source) = package.pre_build_commands.as_deref() else {
         return Ok(());
     };
+
+    let extra_paths = build_python_paths(config);
 
     let source_dir_abs = source_dir
         .canonicalize()
@@ -1412,7 +1642,14 @@ fn apply_pre_build_commands(
             globals.set_item("os", os_mod).ok();
         }
         if let Ok(sys_mod) = py.import("sys") {
-            globals.set_item("sys", sys_mod).ok();
+            globals.set_item("sys", &sys_mod).ok();
+            if !extra_paths.is_empty() {
+                if let Ok(path_obj) = sys_mod.getattr("path") {
+                    for path in extra_paths.iter().rev() {
+                        let _ = path_obj.call_method1("insert", (0, path));
+                    }
+                }
+            }
         }
 
         let bootstrap = r#"

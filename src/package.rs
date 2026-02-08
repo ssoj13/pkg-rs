@@ -8,7 +8,7 @@
 //!
 //! Package names follow a strict format: `base-version` where:
 //! - **base**: Package identifier (e.g., "maya", "redshift", "houdini")
-//! - **version**: SemVer-compatible version (e.g., "2026.1.0", "3.5.0")
+//! - **version**: Rez-style version string (e.g., "2026.1.0", "3.5", "2.0-beta")
 //!
 //! The full name is `maya-2026.1.0` and is used as the unique identifier.
 //!
@@ -117,7 +117,7 @@ use crate::error::PackageError;
 use pyo3::prelude::*;
 use pyo3::conversion::IntoPyObject;
 use pyo3::types::{PyAny, PyBool, PyDict, PyList, PyTuple};
-use semver::Version;
+use crate::rez_version::Version;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
@@ -169,7 +169,7 @@ impl SolveStatus {
 ///
 /// - `name`: Full package identifier (`maya-2026.1.0`)
 /// - `base`: Package base name (`maya`)
-/// - `version`: SemVer version string (`2026.1.0`)
+/// - `version`: Rez-style version string (`2026.1.0`, `3.5`, `2.0-beta`)
 ///
 /// The `name` field is automatically computed as `{base}-{version}`.
 ///
@@ -191,7 +191,7 @@ pub struct Package {
     #[pyo3(get, set)]
     pub base: String,
 
-    /// Package version in SemVer format (e.g., "2026.1.0").
+    /// Package version string (Rez-style, e.g., "2026.1.0", "3.5", "2.0-beta").
     #[pyo3(get)]
     pub version: String,
 
@@ -749,11 +749,11 @@ impl Package {
         Ok(self._env(env_name, true).or_else(|| self.default_env()))
     }
 
-    /// Parse version as SemVer.
+    /// Parse version using Rez-style versioning.
     ///
-    /// Returns error if version is not valid SemVer.
+    /// Returns error if version is not valid.
     pub fn semver(&self) -> PyResult<String> {
-        // Just validate, return as string for Python
+        // Kept for backward compatibility; this validates Rez-style versions.
         use crate::error::IntoPyErr;
         Ok(Version::parse(&self.version).py_err()?.to_string())
     }
@@ -761,15 +761,15 @@ impl Package {
     /// Check if this package satisfies a version constraint.
     ///
     /// # Arguments
-    /// * `constraint` - Version requirement (e.g., ">=2026.0.0,<2027.0.0")
+    /// * `constraint` - Rez-style version requirement (e.g., "1+<4", "==2026")
     pub fn satisfies(&self, constraint: &str) -> PyResult<bool> {
-        use semver::VersionReq;
-
         use crate::error::IntoPyErr;
-        let version = Version::parse(&self.version).py_err()?;
-        let req = VersionReq::parse(constraint).py_err()?;
+        use crate::rez_version::VersionRange;
 
-        Ok(req.matches(&version))
+        let version = Version::parse(&self.version).py_err()?;
+        let range = VersionRange::parse(constraint).py_err()?;
+
+        Ok(range.contains_version(&version))
     }
 
     /// Convert to dictionary.
@@ -1446,6 +1446,10 @@ impl Package {
     /// let (base, version) = Package::parse_name("maya-2026.1.0")?;
     /// assert_eq!(base, "maya");
     /// assert_eq!(version, "2026.1.0");
+    ///
+    /// let (base, version) = Package::parse_name("maya-2026.1.0--win64")?;
+    /// assert_eq!(base, "maya");
+    /// assert_eq!(version, "2026.1.0--win64");
     /// ```
     pub fn parse_name(name: &str) -> Result<(String, String), PackageError> {
         let pkg_id = Self::parse_id(name)?;
@@ -1456,9 +1460,9 @@ impl Package {
             reason: "Missing version".to_string(),
         })?;
 
-        // Return version with variant if present
+        // Return version with variant suffix if present
         let version = match pkg_id.variant {
-            Some(v) => format!("{}-{}", version_str, v),
+            Some(v) => format!("{}--{}", version_str, v),
             None => version_str,
         };
         Ok((pkg_id.name, version))
@@ -1468,7 +1472,7 @@ impl Package {
     ///
     /// # Example
     /// ```ignore
-    /// let id = Package::parse_id("maya-2026.1.0-win64")?;
+    /// let id = Package::parse_id("maya-2026.1.0--win64")?;
     /// assert_eq!(id.name, "maya");
     /// assert_eq!(id.version(), Some("2026.1.0".to_string()));
     /// assert_eq!(id.variant, Some("win64".to_string()));
@@ -1481,7 +1485,7 @@ impl Package {
             reason: "Invalid package ID format".to_string(),
         })?;
 
-        // Validate version is valid semver (if present)
+        // Validate version is valid (if present)
         if let Some(version_str) = pkg_id.version() {
             Version::parse(&version_str).map_err(|e| PackageError::InvalidVersion {
                 version: version_str,
@@ -1500,7 +1504,7 @@ impl Package {
         Ok(Self::new(base, version))
     }
 
-    /// Get parsed SemVer version.
+    /// Get parsed version.
     pub fn parsed_version(&self) -> Result<Version, PackageError> {
         Version::parse(&self.version).map_err(|e| PackageError::InvalidVersion {
             version: self.version.clone(),
@@ -1509,8 +1513,6 @@ impl Package {
     }
 
     /// Compare versions with another package of the same base.
-    ///
-    /// Returns ordering based on SemVer rules.
     pub fn version_cmp(&self, other: &Self) -> Result<std::cmp::Ordering, PackageError> {
         let v1 = self.parsed_version()?;
         let v2 = other.parsed_version()?;
@@ -1653,7 +1655,6 @@ impl Package {
     /// Where {BASE} is uppercase base name with dashes replaced by underscores.
     pub fn stamp(&self) -> Vec<crate::evar::Evar> {
         use crate::evar::Evar;
-        use semver::Version;
 
         let mut result = Vec::new();
         
@@ -1673,20 +1674,21 @@ impl Package {
         result.push(Evar::set(format!("{}_ROOT", prefix), root));
         result.push(Evar::set(format!("{}_VERSION", prefix), self.version.clone()));
         
-        // Parse version components
+        // Parse version components (Rez-style tokens)
         if let Ok(ver) = Version::parse(&self.version) {
-            result.push(Evar::set(format!("{}_MAJOR", prefix), ver.major.to_string()));
-            result.push(Evar::set(format!("{}_MINOR", prefix), ver.minor.to_string()));
-            result.push(Evar::set(format!("{}_PATCH", prefix), ver.patch.to_string()));
-            
-            // Variant: prerelease or build metadata
-            let variant = if !ver.pre.is_empty() {
-                ver.pre.to_string()
-            } else if !ver.build.is_empty() {
-                ver.build.to_string()
+            let parts = ver.as_tuple();
+            let major = parts.get(0).cloned().unwrap_or_default();
+            let minor = parts.get(1).cloned().unwrap_or_default();
+            let patch = parts.get(2).cloned().unwrap_or_default();
+            let variant = if parts.len() > 3 {
+                parts[3..].join(".")
             } else {
                 String::new()
             };
+
+            result.push(Evar::set(format!("{}_MAJOR", prefix), major));
+            result.push(Evar::set(format!("{}_MINOR", prefix), minor));
+            result.push(Evar::set(format!("{}_PATCH", prefix), patch));
             result.push(Evar::set(format!("{}_VARIANT", prefix), variant));
         } else {
             // Fallback: try simple split on dots
@@ -1727,16 +1729,16 @@ mod tests {
         assert_eq!(base, "maya");
         assert_eq!(ver, "2026.1.0");
 
-        // Dash in base name
-        let (base2, ver2) = Package::parse_name("my-plugin-1.0.0").unwrap();
-        assert_eq!(base2, "my-plugin");
+        // Another package
+        let (base2, ver2) = Package::parse_name("myplugin-1.0.0").unwrap();
+        assert_eq!(base2, "myplugin");
         assert_eq!(ver2, "1.0.0");
 
         // Invalid: no version
         assert!(Package::parse_name("maya").is_err());
 
-        // Invalid: bad version
-        assert!(Package::parse_name("maya-notaversion").is_err());
+        // Invalid: bad version syntax
+        assert!(Package::parse_name("maya--").is_err());
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Pip import command.
 
 use pkg_lib::pip::{import_pip_package, PipOptions};
+use pkg_lib::config;
 use pkg_lib::Storage;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -23,7 +24,8 @@ pub fn cmd_pip(
         return ExitCode::FAILURE;
     }
 
-    let mut merged_extra = parse_args(extra);
+    let mut merged_extra = config_extra_args();
+    merged_extra.extend(parse_args(extra));
     merged_extra.extend(extra_args);
 
     let install_mode = if no_deps {
@@ -73,5 +75,26 @@ fn parse_args(args: Option<String>) -> Vec<String> {
             .split_whitespace()
             .map(|s| s.to_string())
             .collect(),
+    }
+}
+
+fn config_extra_args() -> Vec<String> {
+    let cfg = match config::get() {
+        Ok(cfg) => cfg,
+        Err(_) => return Vec::new(),
+    };
+
+    let value = match config::get_json(cfg, "pip_extra_args") {
+        Some(value) => value,
+        None => return Vec::new(),
+    };
+
+    match value {
+        serde_json::Value::Array(items) => items
+            .into_iter()
+            .filter_map(|item| item.as_str().map(|s| s.to_string()))
+            .collect(),
+        serde_json::Value::String(text) => parse_args(Some(text)),
+        _ => Vec::new(),
     }
 }

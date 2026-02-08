@@ -154,7 +154,7 @@ pub enum PackageError {
         reason: String,
     },
 
-    /// Invalid version string (must be valid SemVer)
+    /// Invalid version string (Rez-style)
     #[error("invalid version '{version}': {reason}")]
     InvalidVersion {
         /// The invalid version string
@@ -552,9 +552,9 @@ impl<T> IntoPyErr<T> for std::result::Result<T, serde_json::Error> {
     }
 }
 
-impl<T> IntoPyErr<T> for std::result::Result<T, semver::Error> {
+impl<T> IntoPyErr<T> for std::result::Result<T, crate::rez_version::VersionError> {
     fn py_err(self) -> std::result::Result<T, PyErr> {
-        self.map_err(|e| PyValueError::new_err(format!("Invalid semver: {}", e)))
+        self.map_err(|e| PyValueError::new_err(format!("Invalid version: {}", e)))
     }
 }
 

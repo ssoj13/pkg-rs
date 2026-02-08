@@ -12,10 +12,10 @@ pub fn cmd_gen_pkg(package_id: &str) -> ExitCode {
         Some(id) => id,
         None => {
             error!(
-                "Invalid package ID: '{}'. Expected format: name-version[-variant]",
+                "Invalid package ID: '{}'. Expected format: name-version[--variant]",
                 package_id
             );
-            error!("Examples: maya-2026.1.0, my-plugin-1.0.0-win64");
+            error!("Examples: maya-2026.1.0, maya-2026.1.0--win64");
             return ExitCode::FAILURE;
         }
     };

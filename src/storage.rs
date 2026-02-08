@@ -659,16 +659,16 @@ impl Storage {
     }
 }
 
-/// Sort versions newest-first using semver comparison.
+/// Sort versions newest-first using Rez-style version comparison.
 /// Standalone function to avoid borrow conflicts.
 fn sort_versions_vec(versions: &mut Vec<String>) {
     versions.sort_by(|a, b| {
         let va = Package::parse_name(a)
             .ok()
-            .and_then(|(_, v)| semver::Version::parse(&v).ok());
+            .and_then(|(_, v)| crate::rez_version::Version::parse(&v).ok());
         let vb = Package::parse_name(b)
             .ok()
-            .and_then(|(_, v)| semver::Version::parse(&v).ok());
+            .and_then(|(_, v)| crate::rez_version::Version::parse(&v).ok());
 
         match (va, vb) {
             (Some(va), Some(vb)) => vb.cmp(&va), // Reverse for newest first

@@ -7,8 +7,9 @@ use super::PackageIndex;
 use crate::dep::DepSpec;
 use crate::error::SolverError;
 use pubgrub::{Dependencies, DependencyProvider, Map, PackageResolutionStatistics, Ranges};
-use semver::Version;
 use std::cmp::Reverse;
+
+use crate::rez_version::Version;
 
 /// PubGrub dependency provider.
 ///
@@ -71,7 +72,7 @@ impl DependencyProvider for PubGrubProvider<'_> {
         if let Some(ver) = self.index.versions(package).first() {
             Reverse((*ver).clone())
         } else {
-            Reverse(Version::new(0, 0, 0))
+            Reverse(Version::empty())
         }
     }
 
@@ -83,7 +84,7 @@ impl DependencyProvider for PubGrubProvider<'_> {
     ) -> Result<Option<Self::V>, Self::Err> {
         // Virtual root package
         if package == "__root__" {
-            return Ok(Some(Version::new(0, 0, 0)));
+            return Ok(Some(Version::empty()));
         }
 
         // Get all versions (already sorted newest first)

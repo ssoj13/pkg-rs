@@ -138,6 +138,8 @@ pub mod loader;
 pub mod name;
 pub mod package;
 pub mod pip;
+pub mod plugins;
+pub mod rez_version;
 pub mod solver;
 pub mod storage;
 pub mod token;
@@ -292,7 +294,7 @@ mod tests {
         assert!(spec1.matches_impl("3.5.2").unwrap());
         assert!(!spec1.matches_impl("4.0.0").unwrap());
 
-        let spec2 = DepSpec::parse_impl("maya-2026.1.0").unwrap();
+        let spec2 = DepSpec::parse_impl("maya==2026.1.0").unwrap();
         assert_eq!(spec2.base, "maya");
         assert!(spec2.is_exact());
 

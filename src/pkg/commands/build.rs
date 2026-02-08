@@ -1,6 +1,7 @@
 //! Build command.
 
 use pkg_lib::build::{build_package, BuildOptions, BuildType};
+use pkg_lib::config;
 use pkg_lib::{Loader, Storage};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -9,7 +10,7 @@ use std::process::ExitCode;
 pub fn cmd_build(
     storage: &Storage,
     build_system: Option<String>,
-    process: String,
+    process: Option<String>,
     build_args: Option<String>,
     child_build_args: Option<String>,
     variants: Vec<usize>,
@@ -48,10 +49,7 @@ pub fn cmd_build(
     merged_build_args.extend(parse_args(build_args));
 
     let merged_child_args = parse_args(child_build_args);
-    let build_type = match process.as_str() {
-        "central" => BuildType::Central,
-        _ => BuildType::Local,
-    };
+    let build_type = resolve_build_type(process);
 
     let options = BuildOptions {
         build_system,
@@ -72,6 +70,15 @@ pub fn cmd_build(
             if let Some(path) = report.install_path {
                 println!("Installed to: {}", path.display());
             }
+            if !report.build_env_scripts.is_empty() {
+                println!("\nThe following executable script(s) have been created:");
+                for path in &report.build_env_scripts {
+                    let display_path = path
+                        .canonicalize()
+                        .unwrap_or_else(|_| path.to_path_buf());
+                    println!("{}", normalize_display_path(&display_path));
+                }
+            }
             ExitCode::SUCCESS
         }
         Err(e) => {
@@ -90,4 +97,33 @@ fn parse_args(args: Option<String>) -> Vec<String> {
             .map(|s| s.to_string())
             .collect(),
     }
+}
+
+fn normalize_display_path(path: &PathBuf) -> String {
+    let mut s = path.display().to_string();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        s = format!(r"\\{}", rest);
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        s = rest.to_string();
+    }
+    s
+}
+
+fn resolve_build_type(process: Option<String>) -> BuildType {
+    if let Some(process) = process {
+        return match process.as_str() {
+            "central" => BuildType::Central,
+            _ => BuildType::Local,
+        };
+    }
+
+    if let Ok(cfg) = config::get() {
+        if let Some(value) = config::get_str(cfg, "default_build_process") {
+            if value.eq_ignore_ascii_case("central") {
+                return BuildType::Central;
+            }
+        }
+    }
+
+    BuildType::Local
 }

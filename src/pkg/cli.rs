@@ -34,7 +34,7 @@ pub struct Cli {
     pub log_file: Option<Option<PathBuf>>,
 
     /// Config file override (Rez config .py/.yaml)
-    #[arg(long = "cfg", global = true)]
+    #[arg(short = 'c', long = "config", alias = "cfg")]
     pub cfg: Option<PathBuf>,
 
     /// Package repositories (can be specified multiple times)
@@ -96,8 +96,8 @@ pub(crate) struct BuildArgs {
     #[arg(short = 'b', long = "build-system")]
     pub(crate) build_system: Option<String>,
     /// Build process to use (local, central)
-    #[arg(long = "process", default_value = "local", value_parser = ["local", "central"])]
-    pub(crate) process: String,
+    #[arg(long = "process", value_parser = ["local", "central"])]
+    pub(crate) process: Option<String>,
     /// Select variants to build (zero-indexed)
     #[arg(long = "variants")]
     pub(crate) variants: Vec<usize>,
@@ -295,8 +295,8 @@ pub enum Commands {
     /// Generate package.py template
     #[command(name = "gen-pkg")]
     GenPkg {
-        /// Package identifier: name-version[-variant]
-        /// Examples: maya-2026.1.0, my-plugin-1.0.0-win64
+        /// Package identifier: name-version[--variant]
+        /// Examples: maya-2026.1.0, maya-2026.1.0--win64
         package_id: String,
     },
 

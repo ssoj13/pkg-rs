@@ -11,20 +11,24 @@
 //!
 //! - `name` - Any version (e.g., `redshift`)
 //! - `name@constraint` - Version constraint (e.g., `redshift@>=3.5,<4.0`)
-//! - `name@version` - Exact version (e.g., `redshift@3.5.0`)
+//! - `name==version` - Exact version (e.g., `redshift==3.5.0`)
+//! - `name-version` - Rez-style range shorthand (superset, e.g., `redshift-3.5`)
 //!
-//! Constraint syntax follows SemVer (VersionReq):
-//! - `>=1.0.0` - Greater than or equal
-//! - `<2.0.0` - Less than
-//! - `^1.2.3` - Compatible (same major)
-//! - `~1.2.3` - Compatible (same major.minor)
-//! - `>=1.0,<2.0` - Multiple constraints (comma-separated)
+//! Constraint syntax follows Rez version ranges:
+//! - `3` - Superset (3.x)
+//! - `2+` or `>=2` - Inclusive lower bound
+//! - `<4` or `<=4` - Upper bound
+//! - `1+<4` or `>=1,<4` - Bounded range
+//! - `1..4` - Inclusive bounded range
+//! - `3|5+` - Union (OR)
+//! - `==2.3.0` - Exact version
 //!
 //! ## Resolved Dependencies
 //!
 //! Used in `Package.deps` for concrete solved versions:
 //!
-//! - `name-version` - Exact package (e.g., `redshift-3.5.2`)
+//! - `name-version` - Package identifier (e.g., `redshift-3.5.2`)
+//!   (In requirements, this represents a version range superset.)
 //!
 //! # Examples
 //!
@@ -37,8 +41,8 @@
 //! assert!(spec.matches_version("3.5.2"));
 //! assert!(!spec.matches_version("4.0.0"));
 //!
-//! // Parse resolved dependency
-//! let resolved = DepSpec::parse("redshift-3.5.2")?;
+//! // Parse exact requirement
+//! let resolved = DepSpec::parse("redshift==3.5.2")?;
 //! assert_eq!(resolved.base, "redshift");
 //! assert_eq!(resolved.exact_version(), Some("3.5.2"));
 //! ```
@@ -52,9 +56,10 @@
 
 use crate::error::PackageError;
 use pyo3::prelude::*;
-use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+use crate::rez_version::{Requirement, Version, VersionRange};
 
 /// Dependency specification.
 ///
@@ -65,12 +70,12 @@ use std::fmt;
 /// # Parsing Rules
 ///
 /// 1. If contains `@`: Split on `@` → (base, constraint)
-/// 2. If contains `-` followed by digit: Split → (base, exact version)
-/// 3. Otherwise: base only, any version
+/// 2. Otherwise: Parse as Rez requirement (name + optional range)
+/// 3. If no range: base only, any version
 #[pyclass]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DepSpec {
-    /// Package base name (e.g., "redshift", "maya", "my-plugin").
+    /// Package base name (e.g., "redshift", "maya", "my_plugin").
     #[pyo3(get)]
     pub base: String,
 
@@ -136,12 +141,11 @@ impl DepSpec {
         Ok(self.matches_impl(version)?)
     }
 
-    /// Check if this is an exact version (not a range).
+    /// Check if this is an exact version constraint.
     ///
-    /// Returns true if constraint is a single exact version.
+    /// Returns true if constraint is `==version` (or `=version`).
     pub fn is_exact(&self) -> bool {
-        // Try to parse as exact version
-        Version::parse(&self.constraint).is_ok()
+        self.constraint.starts_with("==") || self.constraint.starts_with('=')
     }
 
     /// Get exact version if this is an exact constraint.
@@ -149,7 +153,13 @@ impl DepSpec {
     /// Returns None if this is a range constraint.
     pub fn exact_version(&self) -> Option<String> {
         if self.is_exact() {
-            Some(self.constraint.clone())
+            let mut s = self.constraint.as_str();
+            if let Some(rest) = s.strip_prefix("==") {
+                s = rest;
+            } else if let Some(rest) = s.strip_prefix('=') {
+                s = rest;
+            }
+            Some(s.to_string())
         } else {
             None
         }
@@ -157,7 +167,7 @@ impl DepSpec {
 
     /// Check if this accepts any version.
     pub fn is_any(&self) -> bool {
-        self.constraint == "*"
+        self.constraint.is_empty() || self.constraint == "*"
     }
 
     /// Convert to requirement format (`name@constraint`).
@@ -191,7 +201,7 @@ impl DepSpec {
         Ok(Self {
             original: format!("{}-{}", base, version),
             base,
-            constraint: version,
+            constraint: format!("=={}", version),
         })
     }
 
@@ -230,16 +240,20 @@ impl DepSpec {
             });
         }
 
-        // Format 1: name@constraint (requirement)
+        // Format 1: name@constraint (explicit requirement)
         if let Some(at_pos) = spec.find('@') {
             let base = spec[..at_pos].to_string();
-            let constraint = spec[at_pos + 1..].to_string();
+            let mut constraint = spec[at_pos + 1..].to_string();
 
             if base.is_empty() {
                 return Err(PackageError::InvalidName {
                     name: spec.to_string(),
                     reason: "Empty base name".to_string(),
                 });
+            }
+
+            if constraint.is_empty() {
+                constraint = "*".to_string();
             }
 
             // Validate constraint
@@ -252,29 +266,30 @@ impl DepSpec {
             });
         }
 
-        // Format 2: name-version[-variant] (resolved dependency)
-        // Uses shared name parsing logic from name module
-        if let Some(pkg_id) = crate::name::PackageId::parse(spec) {
-            // Only treat as resolved dependency if it has a version
-            if let Some(version_str) = pkg_id.version() {
-                // Validate as semver
-                Version::parse(&version_str).map_err(|e| PackageError::InvalidVersion {
-                    version: version_str.clone(),
-                    reason: e.to_string(),
-                })?;
+        // Rez-style requirement (name-version or name<range)
+        if spec.chars().any(|c| matches!(c, '-' | '#' | '<' | '>' | '=' | '!' | '~')) {
+            let req = Requirement::parse(spec).map_err(|e| PackageError::InvalidVersion {
+                version: spec.to_string(),
+                reason: e.to_string(),
+            })?;
 
-                // Use full version+variant as constraint for exact match
-                let constraint = match &pkg_id.variant {
-                    Some(v) => format!("{}-{}", version_str, v),
-                    None => version_str,
-                };
-
-                return Ok(Self {
-                    base: pkg_id.name,
-                    constraint,
-                    original: spec.to_string(),
+            if req.conflict {
+                return Err(PackageError::InvalidVersion {
+                    version: spec.to_string(),
+                    reason: "Conflict/weak requirements are not supported yet".to_string(),
                 });
             }
+
+            let constraint = match req.range {
+                None => "*".to_string(),
+                Some(range) => range.to_string(),
+            };
+
+            return Ok(Self {
+                base: req.name,
+                constraint,
+                original: spec.to_string(),
+            });
         }
 
         // Format 3: just name (any version)
@@ -287,17 +302,11 @@ impl DepSpec {
 
     /// Validate a version constraint string.
     fn validate_constraint(constraint: &str) -> Result<(), PackageError> {
-        if constraint == "*" {
+        if constraint.is_empty() || constraint == "*" {
             return Ok(());
         }
 
-        // Try as exact version first
-        if Version::parse(constraint).is_ok() {
-            return Ok(());
-        }
-
-        // Try as version requirement
-        VersionReq::parse(constraint).map_err(|e| PackageError::InvalidVersion {
+        VersionRange::parse(constraint).map_err(|e| PackageError::InvalidVersion {
             version: constraint.to_string(),
             reason: e.to_string(),
         })?;
@@ -312,74 +321,24 @@ impl DepSpec {
             reason: e.to_string(),
         })?;
 
-        if self.constraint == "*" {
+        if self.is_any() {
             return Ok(true);
         }
 
-        if self.constraint.contains('|') {
-            for part in self.constraint.split('|') {
-                let part = part.trim();
-                if part.is_empty() {
-                    continue;
-                }
-                let spec = DepSpec::new(self.base.clone(), Some(part.to_string()));
-                if spec.matches_impl(version)? {
-                    return Ok(true);
-                }
-            }
-            return Ok(false);
-        }
-
-        // Try exact match first
-        if let Ok(exact) = Version::parse(&self.constraint) {
-            return Ok(ver == exact);
-        }
-
-        // Try as version requirement
-        let req = VersionReq::parse(&self.constraint).map_err(|e| PackageError::InvalidVersion {
-            version: self.constraint.clone(),
-            reason: e.to_string(),
-        })?;
-
-        Ok(req.matches(&ver))
+        let range = self.version_range()?;
+        Ok(range.contains_version(&ver))
     }
 
-    /// Get parsed VersionReq for solver integration.
-    pub fn version_req(&self) -> Result<VersionReq, PackageError> {
-        if self.constraint == "*" {
-            return VersionReq::parse("*").map_err(|e| PackageError::InvalidVersion {
-                version: "*".to_string(),
+    /// Get parsed VersionRange for solver integration.
+    pub fn version_range(&self) -> Result<VersionRange, PackageError> {
+        if self.is_any() {
+            return VersionRange::parse("").map_err(|e| PackageError::InvalidVersion {
+                version: self.constraint.clone(),
                 reason: e.to_string(),
             });
         }
 
-        if self.constraint.contains('|') {
-            // Fallback to any-version requirement; union ranges are handled in solver.
-            return VersionReq::parse("*").map_err(|e| PackageError::InvalidVersion {
-                version: "*".to_string(),
-                reason: e.to_string(),
-            });
-        }
-
-        // Exact version: convert to requirement
-        if let Ok(ver) = Version::parse(&self.constraint) {
-            let req_str = format!("={}", ver);
-            return VersionReq::parse(&req_str).map_err(|e| PackageError::InvalidVersion {
-                version: req_str,
-                reason: e.to_string(),
-            });
-        }
-
-        // Parse as requirement
-        VersionReq::parse(&self.constraint).map_err(|e| PackageError::InvalidVersion {
-            version: self.constraint.clone(),
-            reason: e.to_string(),
-        })
-    }
-
-    /// Get parsed Version for exact constraints.
-    pub fn version(&self) -> Result<Version, PackageError> {
-        Version::parse(&self.constraint).map_err(|e| PackageError::InvalidVersion {
+        VersionRange::parse(&self.constraint).map_err(|e| PackageError::InvalidVersion {
             version: self.constraint.clone(),
             reason: e.to_string(),
         })
@@ -421,17 +380,11 @@ pub fn filter_by_spec<'a>(
 
     for pkg in packages {
         // Parse package name
-        if let Some(dash_idx) = pkg.rfind('-') {
-            let base = &pkg[..dash_idx];
-            let version = &pkg[dash_idx + 1..];
-
-            // Check base name match
+        if let Ok((base, version)) = crate::Package::parse_name(pkg) {
             if base != spec.base {
                 continue;
             }
-
-            // Check version constraint
-            if spec.matches_impl(version)? {
+            if spec.matches_impl(&version)? {
                 matches.push(pkg);
             }
         }
@@ -453,10 +406,10 @@ mod tests {
         assert!(!spec.is_exact());
         assert!(!spec.is_any());
 
-        // Exact version via @
-        let spec2 = DepSpec::parse_impl("ocio@2.3.0").unwrap();
+        // Exact version via ==
+        let spec2 = DepSpec::parse_impl("ocio==2.3.0").unwrap();
         assert_eq!(spec2.base, "ocio");
-        assert_eq!(spec2.constraint, "2.3.0");
+        assert_eq!(spec2.constraint, "==2.3.0");
         assert!(spec2.is_exact());
     }
 
@@ -465,8 +418,8 @@ mod tests {
         let spec = DepSpec::parse_impl("redshift-3.5.2").unwrap();
         assert_eq!(spec.base, "redshift");
         assert_eq!(spec.constraint, "3.5.2");
-        assert!(spec.is_exact());
-        assert_eq!(spec.exact_version(), Some("3.5.2".to_string()));
+        assert!(!spec.is_exact());
+        assert_eq!(spec.exact_version(), None);
     }
 
     #[test]
@@ -478,11 +431,12 @@ mod tests {
     }
 
     #[test]
-    fn depspec_parse_dash_in_name() {
-        // Dash in base name, followed by version
-        let spec = DepSpec::parse_impl("my-plugin-1.0.0").unwrap();
-        assert_eq!(spec.base, "my-plugin");
+    fn depspec_parse_dash_separator() {
+        // Dash separator indicates a version range in Rez syntax
+        let spec = DepSpec::parse_impl("myplugin-1.0.0").unwrap();
+        assert_eq!(spec.base, "myplugin");
         assert_eq!(spec.constraint, "1.0.0");
+        assert!(!spec.is_exact());
     }
 
     #[test]
@@ -497,7 +451,7 @@ mod tests {
         assert!(!spec.matches_impl("4.1.0").unwrap());
 
         // Exact version
-        let exact = DepSpec::parse_impl("ocio@2.3.0").unwrap();
+        let exact = DepSpec::parse_impl("ocio==2.3.0").unwrap();
         assert!(exact.matches_impl("2.3.0").unwrap());
         assert!(!exact.matches_impl("2.3.1").unwrap());
         assert!(!exact.matches_impl("2.2.0").unwrap());
@@ -506,21 +460,6 @@ mod tests {
         let any = DepSpec::parse_impl("python").unwrap();
         assert!(any.matches_impl("3.11.0").unwrap());
         assert!(any.matches_impl("2.7.0").unwrap());
-    }
-
-    #[test]
-    fn depspec_caret_tilde() {
-        // Caret: same major
-        let caret = DepSpec::parse_impl("pkg@^1.2.3").unwrap();
-        assert!(caret.matches_impl("1.2.3").unwrap());
-        assert!(caret.matches_impl("1.9.0").unwrap());
-        assert!(!caret.matches_impl("2.0.0").unwrap());
-
-        // Tilde: same minor
-        let tilde = DepSpec::parse_impl("pkg@~1.2.3").unwrap();
-        assert!(tilde.matches_impl("1.2.3").unwrap());
-        assert!(tilde.matches_impl("1.2.9").unwrap());
-        assert!(!tilde.matches_impl("1.3.0").unwrap());
     }
 
     #[test]

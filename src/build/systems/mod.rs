@@ -8,7 +8,7 @@ mod python;
 
 use crate::error::BuildError;
 use crate::Package;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub use cargo::CargoBuildSystem;
@@ -91,16 +91,36 @@ pub struct BuildSystemRegistry {
 }
 
 impl BuildSystemRegistry {
-    pub fn new() -> Self {
-        Self {
-            systems: vec![
-                Box::new(CustomBuildSystem),
-                Box::new(MakeBuildSystem),
-                Box::new(CmakeBuildSystem),
-                Box::new(CargoBuildSystem),
-                Box::new(PythonBuildSystem),
-            ],
+    pub fn new(enabled: &[String]) -> Self {
+        let mut enabled_set = HashSet::new();
+        let mut allow_all = false;
+        for name in enabled {
+            let name = name.trim().to_ascii_lowercase();
+            if name.is_empty() {
+                continue;
+            }
+            if name == "*" || name == "all" {
+                allow_all = true;
+                continue;
+            }
+            enabled_set.insert(name);
         }
+
+        let mut systems: Vec<Box<dyn BuildSystem>> = Vec::new();
+        let mut push = |system: Box<dyn BuildSystem>| {
+            let name = system.name().to_ascii_lowercase();
+            if allow_all || enabled_set.contains(&name) {
+                systems.push(system);
+            }
+        };
+
+        push(Box::new(CustomBuildSystem));
+        push(Box::new(MakeBuildSystem));
+        push(Box::new(CmakeBuildSystem));
+        push(Box::new(CargoBuildSystem));
+        push(Box::new(PythonBuildSystem));
+
+        Self { systems }
     }
 
     pub fn by_name(&self, name: &str) -> Option<&dyn BuildSystem> {
@@ -116,4 +136,12 @@ impl BuildSystemRegistry {
             .map(|s| s.as_ref())
             .find(|s| s.detects_source(source_dir))
     }
+
+    pub fn enabled_names(&self) -> Vec<String> {
+        self.systems
+            .iter()
+            .map(|s| s.name().to_string())
+            .collect()
+    }
+
 }
