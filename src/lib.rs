@@ -150,6 +150,7 @@ pub mod solver;
 pub mod storage;
 pub mod token;
 pub mod toolset;
+pub mod rex;
 
 pub mod gui;
 

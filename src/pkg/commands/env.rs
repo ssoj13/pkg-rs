@@ -1,6 +1,7 @@
 //! Environment command.
 
 use pkg_lib::{Package, ResolvedContext, Storage};
+use pkg_lib::rex::{apply_package_commands, package_root_from_source, packages_in_rex_order};
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
@@ -60,6 +61,24 @@ pub fn cmd_env(
         eprintln!("Environment not found: {}", env_name_ref);
         return ExitCode::FAILURE;
     };
+
+    // Run package pre_commands, commands, post_commands (rex-style) and merge env mutations
+    let phases: [(&str, fn(&Package) -> Option<&String>); 3] = [
+        ("pre_commands", |p| p.pre_commands.as_ref()),
+        ("commands", |p| p.commands.as_ref()),
+        ("post_commands", |p| p.post_commands.as_ref()),
+    ];
+    for (_, get_source) in phases {
+        for pkg_ref in packages_in_rex_order(&pkg) {
+            if let Some(source) = get_source(pkg_ref) {
+                let root = package_root_from_source(pkg_ref.package_source.as_ref());
+                if let Err(e) = apply_package_commands(&mut env, pkg_ref, source, root.as_deref()) {
+                    eprintln!("Package command execution failed ({}): {}", pkg_ref.name, e);
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+    }
 
     // Add PKG_* stamp variables for each resolved package
     if stamp {
