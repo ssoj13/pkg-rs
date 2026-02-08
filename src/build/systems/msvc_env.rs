@@ -1,4 +1,4 @@
-//! MSVC environment bootstrap (vcv-rs port).
+//! MSVC environment bootstrap (Visual Studio PATH, INCLUDE, LIB; vcv-rs port).
 
 use std::collections::HashMap;
 

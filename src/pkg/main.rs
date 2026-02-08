@@ -11,13 +11,12 @@
 
 mod cli;
 mod commands;
-mod legacy;
 mod python;
 mod shell;
 
 use clap::{CommandFactory, Parser};
 use clap_complete::generate;
-use cli::{Cli, Commands, LegacyCommands};
+use cli::{Cli, Commands};
 use log::{debug, info, trace};
 use pkg_lib::{config, Storage};
 use std::path::PathBuf;
@@ -128,6 +127,7 @@ fn main() -> ExitCode {
                 args.dry_run,
                 args.stamp,
                 cli.verbose > 0,
+                args.save_context,
             )
         }
         Commands::Build(args) => {
@@ -189,7 +189,17 @@ fn main() -> ExitCode {
         Commands::Diff(args) => commands::cmd_rez_diff(&storage, &args),
         Commands::Gui => {
             debug!("cmd: rez gui");
-            cmd_rez_stub("rez gui", Vec::new())
+            match pkg_lib::gui::PkgApp::run(storage) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("GUI error: {}", e);
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Commands::Shell => {
+            debug!("cmd: shell");
+            shell::cmd_shell(storage)
         }
         Commands::Help => {
             print_usage();
@@ -214,85 +224,6 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Commands::Completions { shell } => cmd_completions(shell),
-        Commands::Legacy(legacy_cmd) => match legacy_cmd {
-            LegacyCommands::List {
-                patterns,
-                tags,
-                latest,
-                json,
-            } => {
-                debug!("cmd: legacy ls patterns={:?} tags={:?} latest={}", patterns, tags, latest);
-                legacy::cmd_list(&storage, patterns, tags, latest, json)
-            }
-            LegacyCommands::Info { package, json } => {
-                debug!("cmd: legacy info package={}", package);
-                legacy::cmd_info(&storage, &package, json)
-            }
-            LegacyCommands::Graph {
-                packages,
-                format,
-                depth,
-                reverse,
-            } => {
-                debug!(
-                    "cmd: legacy graph packages={:?} format={} depth={} reverse={}",
-                    packages, format, depth, reverse
-                );
-                legacy::cmd_graph(&storage, packages, &format, depth, reverse)
-            }
-            LegacyCommands::Scan { paths } => {
-                debug!("cmd: legacy scan paths={:?}", paths);
-                legacy::cmd_scan(&paths)
-            }
-            LegacyCommands::GenerateRepo {
-                output,
-                small,
-                medium: _,
-                large,
-                stress,
-                packages,
-                versions,
-                depth,
-                dep_rate,
-                seed,
-            } => {
-                let (pkg_count, ver_count) = if small {
-                    (10, 2)
-                } else if large {
-                    (200, 5)
-                } else if stress {
-                    (1000, 10)
-                } else {
-                    (50, 3)
-                };
-                let pkg_count = packages.unwrap_or(pkg_count);
-                let ver_count = versions.unwrap_or(ver_count);
-
-                debug!(
-                    "cmd: legacy gen-repo output={:?} packages={} versions={}",
-                    output, pkg_count, ver_count
-                );
-                legacy::cmd_generate_repo(output, pkg_count, ver_count, depth, dep_rate, seed)
-            }
-            LegacyCommands::GenPkg { package_id } => {
-                debug!("cmd: legacy gen-pkg package_id={}", package_id);
-                legacy::cmd_gen_pkg(&package_id)
-            }
-            LegacyCommands::Shell => {
-                debug!("cmd: legacy shell");
-                shell::cmd_shell(storage)
-            }
-            LegacyCommands::Gui => {
-                debug!("cmd: legacy gui");
-                match pkg_lib::gui::PkgApp::run(storage) {
-                    Ok(()) => ExitCode::SUCCESS,
-                    Err(e) => {
-                        eprintln!("GUI error: {}", e);
-                        ExitCode::FAILURE
-                    }
-                }
-            }
-        },
     }
 }
 
@@ -349,19 +280,6 @@ fn init_logging(verbosity: u8, log_file: &Option<Option<PathBuf>>) {
 fn print_usage() {
     // Use clap's auto-generated long help - includes examples
     Cli::command().print_long_help().unwrap();
-}
-
-/// Stub handler for rez parity commands not implemented yet.
-fn cmd_rez_stub(cmd: &str, args: Vec<String>) -> ExitCode {
-    if args.is_empty() {
-        eprintln!("Rez parity: '{}' is not implemented yet.", cmd);
-    } else {
-        eprintln!(
-            "Rez parity: '{}' is not implemented yet. Args: {:?}",
-            cmd, args
-        );
-    }
-    ExitCode::FAILURE
 }
 
 /// Generate shell completions.

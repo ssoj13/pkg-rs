@@ -1,3 +1,6 @@
+[workspace]
+members = ["crates/legacy"]
+
 [package]
 name = "pkg-rs"
 version = "0.1.0"
@@ -46,6 +49,11 @@ dirs = "6.0"
 
 # Parallel directory walking
 jwalk = "0.8"
+
+# ELF/Mach-O patching (no patchelf/install_name_tool)
+bin-patch-elf = { path = "crates/bin-patch/crates/bin-patch-elf" }
+bin-patch-macho = { path = "crates/bin-patch/crates/bin-patch-macho" }
+goblin = "0.10"
 
 # Temp dirs
 tempfile = "3"

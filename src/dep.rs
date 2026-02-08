@@ -357,6 +357,86 @@ impl Default for DepSpec {
     }
 }
 
+/// Package requirement (rez-next–style interface).
+///
+/// Typed requirement with name, optional version spec, and weak flag.
+/// Parses strings like `python-3.9` or `maya>=2023`; delegates to [`DepSpec`] internally.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PackageRequirement {
+    /// Package base name.
+    pub name: String,
+    /// Version constraint (e.g. `>=3.5,<4.0`); `None` = any version.
+    pub version_spec: Option<String>,
+    /// Weak (optional) requirement.
+    pub weak: bool,
+}
+
+impl PackageRequirement {
+    /// Create a requirement with no version constraint.
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            version_spec: None,
+            weak: false,
+        }
+    }
+
+    /// Create a requirement with version constraint.
+    pub fn with_version(name: String, version_spec: String) -> Self {
+        Self {
+            name,
+            version_spec: Some(version_spec),
+            weak: false,
+        }
+    }
+
+    /// Parse a requirement string (e.g. `python-3.9`, `maya@>=2023`, `redshift`).
+    pub fn parse(spec: &str) -> Result<Self, PackageError> {
+        let spec = spec.trim();
+        if spec.is_empty() {
+            return Err(PackageError::InvalidName {
+                name: spec.to_string(),
+                reason: "Empty requirement".to_string(),
+            });
+        }
+        let dep = DepSpec::parse_impl(spec)?;
+        let version_spec = if dep.is_any() {
+            None
+        } else {
+            Some(dep.constraint)
+        };
+        Ok(Self {
+            name: dep.base,
+            version_spec,
+            weak: false,
+        })
+    }
+
+    /// Check if a version string satisfies this requirement.
+    pub fn satisfied_by(&self, version: &str) -> Result<bool, PackageError> {
+        let constraint = self
+            .version_spec
+            .as_deref()
+            .unwrap_or("*");
+        let dep = DepSpec::new(self.name.clone(), Some(constraint.to_string()));
+        dep.matches_impl(version)
+    }
+
+    /// Requirement string for display/serialization (`name` or `name@constraint`).
+    pub fn to_string(&self) -> String {
+        match &self.version_spec {
+            Some(s) if !s.is_empty() && s != "*" => format!("{}@{}", self.name, s),
+            _ => self.name.clone(),
+        }
+    }
+}
+
+impl fmt::Display for PackageRequirement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
 /// Parse multiple dependency specs from a list of strings.
 ///
 /// # Arguments
@@ -507,5 +587,31 @@ mod tests {
 
         // Empty base
         assert!(DepSpec::parse_impl("@1.0.0").is_err());
+    }
+
+    #[test]
+    fn package_requirement_parse() {
+        let r = PackageRequirement::parse("python-3.9").unwrap();
+        assert_eq!(r.name, "python");
+        assert_eq!(r.version_spec.as_deref(), Some("3.9"));
+        assert!(!r.weak);
+
+        let r2 = PackageRequirement::parse("maya@>=2023").unwrap();
+        assert_eq!(r2.name, "maya");
+        assert_eq!(r2.version_spec.as_deref(), Some(">=2023"));
+
+        let r3 = PackageRequirement::parse("redshift").unwrap();
+        assert_eq!(r3.name, "redshift");
+        assert!(r3.version_spec.is_none());
+    }
+
+    #[test]
+    fn package_requirement_satisfied_by() {
+        let r = PackageRequirement::parse("redshift@>=3.5,<4.0").unwrap();
+        assert!(r.satisfied_by("3.5.2").unwrap());
+        assert!(!r.satisfied_by("4.0.0").unwrap());
+
+        let any = PackageRequirement::parse("python").unwrap();
+        assert!(any.satisfied_by("3.11.0").unwrap());
     }
 }

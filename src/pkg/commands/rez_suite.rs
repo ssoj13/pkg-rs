@@ -1,6 +1,7 @@
-//! Rez suite command (native subset with fallback).
+//! Rez suite command (native subset with fallback to Python rez).
 
 use crate::cli::RezStubArgs;
+use crate::commands::rez_passthrough::cmd_rez_passthrough;
 use serde_yaml::Value as YamlValue;
 use std::collections::{BTreeSet, HashMap};
 use std::env;
@@ -17,8 +18,7 @@ pub fn cmd_rez_suite(args: &RezStubArgs) -> ExitCode {
     };
 
     if parsed.fallback {
-        eprintln!("rez suite: unsupported arguments");
-        return ExitCode::FAILURE;
+        return cmd_rez_passthrough("suite", &args.args);
     }
 
     run_suite(parsed)

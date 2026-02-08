@@ -6,27 +6,33 @@ use std::collections::HashSet;
 use std::process::ExitCode;
 
 /// Show dependency graph in DOT, Mermaid, or list format.
+/// When packages is empty, show graph for entire repository.
 pub fn cmd_rez_depends(storage: &Storage, args: &DependsArgs) -> ExitCode {
-    if args.packages.is_empty() {
-        eprintln!("No packages specified.");
-        return ExitCode::FAILURE;
-    }
-
     let mut edges: Vec<(String, String)> = Vec::new();
     let mut visited: HashSet<String> = HashSet::new();
     let mut roots: Vec<String> = Vec::new();
 
-    for name in &args.packages {
-        let Some(pkg) = storage.resolve(name) else {
-            eprintln!("Package not found: {}", name);
-            return ExitCode::FAILURE;
-        };
-        roots.push(pkg.name.clone());
+    if args.packages.is_empty() {
+        for pkg in storage.packages() {
+            if args.reverse {
+                collect_reverse_deps(storage, &pkg.base, &mut edges, &mut visited, 0, args.depth);
+            } else {
+                collect_deps(storage, &pkg, &mut edges, &mut visited, 0, args.depth);
+            }
+        }
+    } else {
+        for name in &args.packages {
+            let Some(pkg) = storage.resolve(name) else {
+                eprintln!("Package not found: {}", name);
+                return ExitCode::FAILURE;
+            };
+            roots.push(pkg.name.clone());
 
-        if args.reverse {
-            collect_reverse_deps(storage, &pkg.base, &mut edges, &mut visited, 0, args.depth);
-        } else {
-            collect_deps(storage, &pkg, &mut edges, &mut visited, 0, args.depth);
+            if args.reverse {
+                collect_reverse_deps(storage, &pkg.base, &mut edges, &mut visited, 0, args.depth);
+            } else {
+                collect_deps(storage, &pkg, &mut edges, &mut visited, 0, args.depth);
+            }
         }
     }
 

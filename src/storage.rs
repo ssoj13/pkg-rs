@@ -82,7 +82,7 @@
 use crate::dep::DepSpec;
 use crate::error::StorageError;
 use crate::package::Package;
-use crate::package_repository::scan_repositories;
+use crate::repo::scan_repositories;
 use log::{debug, info, trace, warn};
 use pyo3::prelude::*;
 

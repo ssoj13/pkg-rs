@@ -22,6 +22,8 @@ pub(crate) struct CopyResult {
     skipped: Vec<(String, PathBuf)>,
     pub(crate) dest_pkg_root: PathBuf,
     is_varianted: bool,
+    /// (src_variant_root, dest_variant_root) for each copied variant; used by bundle lib patching.
+    pub(crate) copied_pairs: Vec<(PathBuf, PathBuf)>,
 }
 
 pub fn cmd_rez_cp(storage: &Storage, args: &CpArgs) -> ExitCode {
@@ -259,6 +261,7 @@ pub(crate) fn copy_package(
 
     let mut copied = Vec::new();
     let mut skipped = Vec::new();
+    let mut copied_pairs = Vec::new();
 
     for variant in selected {
         let src_variant_root = variant_root(src_pkg_root, &variant);
@@ -287,7 +290,8 @@ pub(crate) fn copy_package(
             copy_timestamp(&src_variant_root, &dest_variant_root);
         }
 
-        copied.push((variant_label(pkg, &variant), dest_variant_root));
+        copied.push((variant_label(pkg, &variant), dest_variant_root.clone()));
+        copied_pairs.push((src_variant_root, dest_variant_root));
     }
 
     if !args.dry_run {
@@ -308,6 +312,7 @@ pub(crate) fn copy_package(
         skipped,
         dest_pkg_root,
         is_varianted,
+        copied_pairs,
     })
 }
 

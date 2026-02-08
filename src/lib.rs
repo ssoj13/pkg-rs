@@ -126,8 +126,10 @@
 
 pub mod archive;
 pub mod app;
+pub mod bundle_patch;
 pub mod py;
 pub mod config;
+pub mod context;
 pub mod build;
 pub mod build_command;
 pub mod cache;
@@ -139,7 +141,7 @@ pub mod loader;
 pub mod name;
 pub mod package_name;
 pub mod package;
-pub mod package_repository;
+pub mod repo;
 pub mod pip;
 pub mod plugins;
 pub mod repo_ops;
@@ -153,13 +155,19 @@ pub mod gui;
 
 // Re-exports for convenience
 pub use app::App;
-pub use dep::DepSpec;
+pub use dep::{DepSpec, PackageRequirement};
 pub use env::Env;
 pub use error::{BuildError, EnvError, EvarError, LoaderError, PackageError, PipError, PkgError, SolverError, StorageError};
 pub use evar::{Action, Evar};
 pub use loader::Loader;
 pub use package::{Package, SolveStatus};
 pub use build_command::BuildCommand;
+pub use build::{BuildConfig, BuildManager, BuildProcessResult, BuildRequest, BuildVerbosity};
+pub use context::{ContextStatus, ResolvedContext};
+pub use repo::{
+    PackageSearchCriteria, RepositoryManager, RepositoryMetadata, RepositoryStats,
+    RepositoryType,
+};
 pub use solver::{PackageIndex, Solver};
 pub use storage::Storage;
 

@@ -780,6 +780,7 @@ pkg_lib (lib.rs)
 | PubGrub | `src/solver/provider.rs` | `PubGrubProvider` |
 | Ranges | `src/solver/ranges.rs` | `depspec_to_ranges` |
 | Cache | `src/cache.rs` | `Cache` |
+| Bundle lib patch | `src/bundle_patch.rs` | `patch_bundle_libs`, uses `crates/bin-patch` (ELF/Mach-O) |
 
 ### CLI Commands
 

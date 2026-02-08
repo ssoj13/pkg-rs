@@ -1,6 +1,6 @@
 //! Environment command.
 
-use pkg_lib::{Package, Storage};
+use pkg_lib::{Package, ResolvedContext, Storage};
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
@@ -20,6 +20,7 @@ pub fn cmd_env(
     dry_run: bool,
     stamp: bool,
     verbose: bool,
+    save_context: Option<PathBuf>,
 ) -> ExitCode {
     if packages.is_empty() {
         eprintln!("No packages specified");
@@ -82,6 +83,26 @@ pub fn cmd_env(
                 eprintln!("Failed to solve environment: {}", e);
                 return ExitCode::FAILURE;
             }
+        }
+    }
+
+    // Save resolved context to .rxt if requested
+    if let Some(ref path) = save_context {
+        let requirements = if packages.len() == 1 {
+            packages.clone()
+        } else {
+            pkg.reqs.clone()
+        };
+        let mut resolved_packages = vec![pkg.clone()];
+        resolved_packages.extend(pkg.deps.clone());
+        let environment_vars = env.to_map();
+        let ctx = ResolvedContext::from_resolved(requirements, resolved_packages, environment_vars);
+        if let Err(e) = ctx.save_to_file(path) {
+            eprintln!("Failed to save context to {}: {}", path.display(), e);
+            return ExitCode::FAILURE;
+        }
+        if verbose {
+            eprintln!("Saved context to {}", path.display());
         }
     }
 

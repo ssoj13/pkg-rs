@@ -1,6 +1,7 @@
-//! Rez bind command (quickstart override + passthrough).
+//! Rez bind command (quickstart override + passthrough to Python rez).
 
 use crate::cli::RezStubArgs;
+use crate::commands::rez_passthrough::cmd_rez_passthrough;
 use pkg_lib::config;
 use pkg_lib::py::{ensure_python_executable, ensure_rez_on_sys_path};
 use pyo3::prelude::*;
@@ -10,12 +11,13 @@ use std::process::ExitCode;
 
 pub fn cmd_rez_bind(args: &RezStubArgs) -> ExitCode {
     let parsed = parse_bind_args(&args.args);
-    if !parsed.quickstart {
-        if parsed.list || parsed.search {
-            eprintln!("rez bind: --list/--search not implemented yet");
-            return ExitCode::FAILURE;
-        }
 
+    // --list / --search: delegate to Python rez
+    if parsed.list || parsed.search {
+        return cmd_rez_passthrough("bind", &args.args);
+    }
+
+    if !parsed.quickstart {
         if parsed.unknown.is_empty() {
             if let Some(pkg) = parsed.pkg.as_deref() {
                 if let Some(exit) = try_native_bind(pkg, &parsed) {
@@ -23,14 +25,8 @@ pub fn cmd_rez_bind(args: &RezStubArgs) -> ExitCode {
                 }
             }
         }
-
-        eprintln!("rez bind: unsupported arguments: {:?}", parsed.unknown);
-        return ExitCode::FAILURE;
-    }
-
-    if parsed.list || parsed.search {
-        eprintln!("rez bind --quickstart: --list/--search not implemented yet");
-        return ExitCode::FAILURE;
+        // Unsupported args or unknown package: delegate to Python rez
+        return cmd_rez_passthrough("bind", &args.args);
     }
 
     cmd_quickstart(parsed)

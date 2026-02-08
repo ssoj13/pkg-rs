@@ -1,0 +1,13 @@
+[package]
+name = "bin-patch-macho"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Mach-O install_name/rpath in-place remap for relocatable bundles"
+
+[dependencies]
+goblin = { version = "0.10", features = ["mach64"] }
+thiserror = "2.0"
+
+[dev-dependencies]
+# none; tests use std only

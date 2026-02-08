@@ -182,6 +182,9 @@ pub fn import_pip_package(
         entry_names = entry_points.iter().map(|ep| ep.name.clone()).collect();
     }
 
+    #[cfg(windows)]
+    sanitize_python_paths_in_scripts(&variant_install_path)?;
+
     let pip_name = format!("{} {}", metadata.name, metadata.version);
     let mut help = Vec::new();
     if let Some(home) = metadata.home_page.as_deref() {
@@ -777,6 +780,60 @@ fn python_list_repr(items: &[String]) -> String {
     }
     out.push(']');
     out
+}
+
+/// On Windows, replaces absolute paths to python.exe/pip.exe in script files
+/// (.cmd, .bat, .py under install_root) with "python"/"pip" so the package
+/// remains relocatable and does not hardcode the build machine's interpreter.
+#[cfg(windows)]
+fn sanitize_python_paths_in_scripts(install_root: &Path) -> Result<(), PipError> {
+    let re_python = Regex::new(r#"(?i)[A-Za-z]:[\\/][^"\r\n]*?python\.exe"#)
+        .map_err(|e| PipError::Config(e.to_string()))?;
+    let re_pip = Regex::new(r#"(?i)[A-Za-z]:[\\/][^"\r\n]*?pip\.exe"#)
+        .map_err(|e| PipError::Config(e.to_string()))?;
+    walk_and_sanitize(install_root, &re_python, &re_pip)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn walk_and_sanitize(
+    dir: &Path,
+    re_python: &Regex,
+    re_pip: &Regex,
+) -> Result<(), PipError> {
+    use std::io::Write;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return Ok(()),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.to_string_lossy().contains(".dist-info") {
+            continue;
+        }
+        if path.is_dir() {
+            walk_and_sanitize(&path, re_python, re_pip)?;
+            continue;
+        }
+        if !path.is_file() {
+            continue;
+        }
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext != "cmd" && ext != "bat" && ext != "py" {
+            continue;
+        }
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let step1 = re_python.replace_all(&content, "python");
+        let out = re_pip.replace_all(&step1, "pip");
+        if out.as_ref() != content {
+            std::fs::File::create(&path)?.write_all(out.as_bytes())?;
+        }
+    }
+    Ok(())
 }
 
 fn copy_pip_payload(

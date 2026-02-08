@@ -11,9 +11,7 @@ use crate::dep::DepSpec;
 use crate::error::BuildError;
 use crate::{Env, Evar, Package, Storage};
 mod systems;
-mod msvc;
-use msvc::{ensure_msvc_env, MsvcEnvState};
-use systems::{BuildContext, BuildPhase, BuildSystemArgs, BuildSystemRegistry};
+use systems::{ensure_msvc_env, BuildContext, BuildPhase, BuildSystemArgs, BuildSystemRegistry, MsvcEnvState};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PyTuple};
 use serde::Serialize;
@@ -1928,5 +1926,101 @@ mod tests {
         let variants = collect_variants(&pkg).unwrap();
         assert_eq!(variants.len(), 1);
         assert!(variants[0].subpath.as_ref().unwrap().len() >= 8);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Rez-next–style build facade: BuildConfig, BuildRequest, BuildProcess, BuildManager
+// ---------------------------------------------------------------------------
+
+/// Build verbosity (rez-next–style).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BuildVerbosity {
+    #[default]
+    Normal,
+    Silent,
+    Verbose,
+    Debug,
+}
+
+/// Build configuration (rez-next–style interface).
+#[derive(Debug, Clone)]
+pub struct BuildConfig {
+    pub build_dir: PathBuf,
+    pub temp_dir: PathBuf,
+    pub max_concurrent_builds: usize,
+    pub build_timeout_seconds: u64,
+    pub clean_before_build: bool,
+    pub keep_artifacts: bool,
+    pub verbosity: BuildVerbosity,
+    pub build_env_vars: HashMap<String, String>,
+}
+
+impl Default for BuildConfig {
+    fn default() -> Self {
+        Self {
+            build_dir: PathBuf::from("build"),
+            temp_dir: PathBuf::from("tmp"),
+            max_concurrent_builds: 4,
+            build_timeout_seconds: 3600,
+            clean_before_build: false,
+            keep_artifacts: true,
+            verbosity: BuildVerbosity::Normal,
+            build_env_vars: HashMap::new(),
+        }
+    }
+}
+
+/// Build request (rez-next–style): package + source path + options.
+#[derive(Debug, Clone)]
+pub struct BuildRequest {
+    pub package: Package,
+    pub source_dir: PathBuf,
+    pub variant: Option<String>,
+    pub options: BuildOptions,
+    pub install_path: Option<PathBuf>,
+}
+
+/// Result of a single build (report + request snapshot).
+#[derive(Debug, Clone)]
+pub struct BuildProcessResult {
+    pub request: BuildRequest,
+    pub report: BuildReport,
+}
+
+/// Build manager (rez-next–style): runs builds via existing build_package.
+#[derive(Debug, Default)]
+pub struct BuildManager {
+    pub config: BuildConfig,
+}
+
+impl BuildManager {
+    pub fn new() -> Self {
+        Self {
+            config: BuildConfig::default(),
+        }
+    }
+
+    pub fn with_config(config: BuildConfig) -> Self {
+        Self { config }
+    }
+
+    /// Run a single build request; delegates to build_package.
+    pub fn build(
+        &self,
+        request: &BuildRequest,
+        storage: &Storage,
+    ) -> Result<BuildProcessResult, BuildError> {
+        let package_path = request.source_dir.join("package.py");
+        let report = build_package(
+            &request.package,
+            &package_path,
+            storage,
+            &request.options,
+        )?;
+        Ok(BuildProcessResult {
+            request: request.clone(),
+            report,
+        })
     }
 }

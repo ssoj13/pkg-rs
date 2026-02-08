@@ -1,6 +1,7 @@
-//! Rez context command (native subset with fallback).
+//! Rez context command (native subset with fallback to Python rez).
 
 use crate::cli::RezStubArgs;
+use crate::commands::rez_passthrough::cmd_rez_passthrough;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::env;
@@ -17,8 +18,7 @@ pub fn cmd_rez_context(args: &RezStubArgs) -> ExitCode {
     };
 
     if parsed.fallback {
-        eprintln!("rez context: unsupported arguments");
-        return ExitCode::FAILURE;
+        return cmd_rez_passthrough("context", &args.args);
     }
 
     run_context(parsed)

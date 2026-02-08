@@ -1,10 +1,12 @@
 //! Command implementations for pkg CLI (Rez-compatible).
 
+mod common;
 mod env;
 mod build;
 mod build_env;
 mod pip;
 mod rez_config;
+mod rez_passthrough;
 mod rez_bind;
 mod rez_context;
 mod rez_status;
@@ -55,4 +57,5 @@ pub use rez_selftest::cmd_rez_selftest;
 pub use rez_test::cmd_rez_test;
 pub use rez_yaml2py::cmd_rez_yaml2py;
 pub use rez_bundle::cmd_rez_bundle;
+pub use common::matches_glob;
 pub use rez_benchmark::cmd_rez_benchmark;

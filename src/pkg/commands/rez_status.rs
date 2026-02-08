@@ -1,6 +1,7 @@
-//! Rez status command (native subset with fallback).
+//! Rez status command (native subset with fallback to Python rez).
 
 use crate::cli::RezStubArgs;
+use crate::commands::rez_passthrough::cmd_rez_passthrough;
 use std::collections::BTreeSet;
 use std::env;
 use std::path::PathBuf;
@@ -16,8 +17,7 @@ pub fn cmd_rez_status(args: &RezStubArgs) -> ExitCode {
     };
 
     if parsed.fallback {
-        eprintln!("rez status: unsupported arguments");
-        return ExitCode::FAILURE;
+        return cmd_rez_passthrough("status", &args.args);
     }
 
     run_status()

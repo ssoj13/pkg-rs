@@ -401,6 +401,16 @@ pub struct Package {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vcs: Option<String>,
 
+    /// Package format version (Rez schema; integer).
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format_version: Option<i32>,
+
+    /// Preprocess hook (Rez parity; function or script name).
+    #[pyo3(get, set)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preprocess: Option<String>,
+
     /// Status of dependency resolution.
     #[pyo3(get)]
     #[serde(default)]
@@ -483,6 +493,8 @@ impl Package {
             previous_version: None,
             previous_revision: None,
             vcs: None,
+            format_version: None,
+            preprocess: None,
             solve_status: SolveStatus::NotSolved,
             solve_error: None,
             package_source: None,
@@ -698,6 +710,12 @@ impl Package {
         })
     }
 
+    /// Validate package definition (name, version, requirements, variants).
+    /// Raises on first validation error.
+    pub fn validate_py(&self) -> PyResult<()> {
+        self.validate().map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+    }
+
     /// Get the default environment.
     ///
     /// Returns the env named "default", or the first env if no default exists,
@@ -860,6 +878,8 @@ impl Package {
             dict.set_item("previous_revision", py.None())?;
         }
         dict.set_item("vcs", &self.vcs)?;
+        dict.set_item("format_version", &self.format_version)?;
+        dict.set_item("preprocess", &self.preprocess)?;
 
         for (key, value) in &self.extras {
             if dict.get_item(key)?.is_none() {
@@ -1047,6 +1067,12 @@ impl Package {
         if let Some(vcs_obj) = dict.get_item("vcs")? {
             pkg.vcs = vcs_obj.extract::<Option<String>>()?;
         }
+        if let Some(fv_obj) = dict.get_item("format_version")? {
+            pkg.format_version = fv_obj.extract::<Option<i32>>()?;
+        }
+        if let Some(pp_obj) = dict.get_item("preprocess")? {
+            pkg.preprocess = pp_obj.extract::<Option<String>>()?;
+        }
         if let Some(source_obj) = dict.get_item("package_source")? {
             pkg.package_source = source_obj.extract::<Option<String>>()?;
         }
@@ -1096,6 +1122,8 @@ impl Package {
             "previous_version",
             "previous_revision",
             "vcs",
+            "format_version",
+            "preprocess",
             "solve_status",
             "solve_error",
             "package_source",
@@ -1316,6 +1344,70 @@ fn extract_commands_value(value: &Bound<'_, PyAny>) -> PyResult<Option<String>> 
 
 // Pure Rust impl with references
 impl Package {
+    /// Validate package definition (rez-next–style semantics).
+    ///
+    /// Checks: non-empty name, name format (alphanumeric/underscore/hyphen),
+    /// non-empty version if present, non-empty requirement/variant strings.
+    pub fn validate(&self) -> Result<(), PackageError> {
+        if self.base.is_empty() {
+            return Err(PackageError::InvalidName {
+                name: self.base.clone(),
+                reason: "Package name cannot be empty".to_string(),
+            });
+        }
+        if !self
+            .base
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            return Err(PackageError::InvalidName {
+                name: self.base.clone(),
+                reason: "Package name may only contain alphanumeric, underscore, and hyphen".to_string(),
+            });
+        }
+        if self.version.is_empty() {
+            return Err(PackageError::InvalidVersion {
+                version: self.version.clone(),
+                reason: "Package version cannot be empty".to_string(),
+            });
+        }
+        for req in &self.reqs {
+            if req.trim().is_empty() {
+                return Err(PackageError::InvalidName {
+                    name: req.clone(),
+                    reason: "Requirement cannot be empty".to_string(),
+                });
+            }
+        }
+        for req in &self.build_requires {
+            if req.trim().is_empty() {
+                return Err(PackageError::InvalidName {
+                    name: req.clone(),
+                    reason: "Build requirement cannot be empty".to_string(),
+                });
+            }
+        }
+        for req in &self.private_build_requires {
+            if req.trim().is_empty() {
+                return Err(PackageError::InvalidName {
+                    name: req.clone(),
+                    reason: "Private build requirement cannot be empty".to_string(),
+                });
+            }
+        }
+        for variant in &self.variants {
+            for req in variant {
+                if req.trim().is_empty() {
+                    return Err(PackageError::InvalidName {
+                        name: req.clone(),
+                        reason: "Variant requirement cannot be empty".to_string(),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Resolve versions (Rust API with slice).
     pub fn solve_version_impl(&mut self, available: &[Package]) -> PyResult<()> {
         use crate::solver::solve_reqs_backend;
@@ -1795,6 +1887,22 @@ mod tests {
         assert!(pkg2.is_newer_than(&pkg1).unwrap());
         assert!(pkg3.is_newer_than(&pkg2).unwrap());
         assert!(!pkg1.is_newer_than(&pkg2).unwrap());
+    }
+
+    #[test]
+    fn package_validate() {
+        let pkg = Package::new("maya".to_string(), "2026.1.0".to_string());
+        assert!(pkg.validate().is_ok());
+
+        let empty_base = Package::new("".to_string(), "1.0.0".to_string());
+        assert!(empty_base.validate().is_err());
+
+        let empty_ver = Package::new("maya".to_string(), "".to_string());
+        assert!(empty_ver.validate().is_err());
+
+        let mut bad_req = Package::new("maya".to_string(), "2026.0.0".to_string());
+        bad_req.add_req("  ".to_string());
+        assert!(bad_req.validate().is_err());
     }
 
     #[test]

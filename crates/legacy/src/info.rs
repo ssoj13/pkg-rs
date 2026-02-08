@@ -1,4 +1,4 @@
-//! Show package info command.
+//! Show package info (legacy implementation).
 
 use pkg_lib::Storage;
 use std::process::ExitCode;

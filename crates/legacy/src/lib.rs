@@ -1,4 +1,4 @@
-//! Legacy pkg-rs command implementations (hidden under `pkg legacy`).
+//! Legacy pkg-rs commands. Not used by the main pkg binary; enable via feature if needed.
 
 mod list;
 mod info;

@@ -1,4 +1,4 @@
-//! List packages command.
+//! List packages (legacy implementation).
 
 use pkg_lib::{Package, Storage};
 use std::process::ExitCode;
@@ -51,24 +51,20 @@ pub fn cmd_list(
     let all_packages = storage.packages();
     let mut packages: Vec<&Package> = all_packages.iter().collect();
 
-    // Filter by glob patterns (OR logic: any pattern matches)
     if !patterns.is_empty() {
         packages.retain(|p| {
-            patterns.iter().any(|pat| {
-                matches_glob(pat, &p.base) || matches_glob(pat, &p.name)
-            })
+            patterns
+                .iter()
+                .any(|pat| matches_glob(pat, &p.base) || matches_glob(pat, &p.name))
         });
     }
 
-    // Filter by tags (all specified tags must be present)
     if !tags.is_empty() {
         packages.retain(|p| tags.iter().all(|t| p.tags.contains(t)));
     }
 
-    // Sort by name
     packages.sort_by(|a, b| a.name.cmp(&b.name));
 
-    // Only latest versions
     if latest {
         let mut seen = std::collections::HashSet::new();
         packages.retain(|p| seen.insert(p.base.clone()));

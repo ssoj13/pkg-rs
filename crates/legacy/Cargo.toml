@@ -1,0 +1,11 @@
+[package]
+name = "pkg-legacy"
+version = "0.1.0"
+edition = "2021"
+description = "Legacy pkg-rs commands (list, info, graph, scan, gen-repo, gen-pkg). Disabled by default."
+publish = false
+
+[dependencies]
+pkg-rs = { path = "../.." }
+log = "0.4"
+serde_json = "1.0"

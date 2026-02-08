@@ -4,7 +4,10 @@ mod cargo;
 mod cmake;
 mod custom;
 mod make;
+mod msvc_env;
 mod python;
+
+pub(crate) use msvc_env::{ensure_msvc_env, MsvcEnvState};
 
 use crate::error::BuildError;
 use crate::Package;

@@ -78,6 +78,9 @@ pub(crate) struct EnvArgs {
     /// Add PKG_* stamp variables for each resolved package
     #[arg(short, long)]
     pub(crate) stamp: bool,
+    /// Save resolved context to .rxt file (for pkg context / suite)
+    #[arg(long = "save-context")]
+    pub(crate) save_context: Option<PathBuf>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -520,10 +523,13 @@ pub enum Commands {
     Depends(DependsArgs),
     /// rez diff
     Diff(DiffArgs),
-    /// rez gui
+    /// rez gui (pkg-rs node editor GUI)
     Gui,
     /// rez help
     Help,
+    /// Interactive shell with tab-completion (pkg-rs)
+    #[command(visible_alias = "sh")]
+    Shell,
     /// rez interpret
     Interpret(InterpretArgs),
     /// rez memcache
@@ -576,114 +582,5 @@ pub enum Commands {
         /// Shell type
         shell: CompletionShell,
     },
-
-    /// Legacy pkg-rs commands (hidden)
-    #[command(name = "legacy", hide = true, subcommand)]
-    Legacy(LegacyCommands),
 }
 
-#[derive(Subcommand)]
-pub(crate) enum LegacyCommands {
-    /// List available packages
-    #[command(visible_alias = "ls")]
-    List {
-        /// Name patterns (glob: maya, cinem*, *_ext?)
-        patterns: Vec<String>,
-        /// Filter by tags (can repeat)
-        #[arg(short = 't', long = "tag")]
-        tags: Vec<String>,
-        /// Show only latest versions
-        #[arg(short = 'L', long)]
-        latest: bool,
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-
-    /// Show package details
-    Info {
-        /// Package name
-        package: String,
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-
-    /// Show dependency graph
-    Graph {
-        /// Package name(s)
-        packages: Vec<String>,
-        /// Output format: dot, mermaid
-        #[arg(short, long, default_value = "dot")]
-        format: String,
-        /// Maximum depth (0 = unlimited)
-        #[arg(short, long, default_value = "0")]
-        depth: usize,
-        /// Show reverse dependencies
-        #[arg(short = 'R', long)]
-        reverse: bool,
-    },
-
-    /// Scan locations for packages
-    Scan {
-        /// Paths to scan
-        paths: Vec<PathBuf>,
-    },
-
-    /// Generate test repository with random packages
-    #[command(name = "gen-repo", after_help =
-        "PRESETS:\n  \
-        --small   10 packages x 2 versions = 20 nodes\n  \
-        --medium  50 packages x 3 versions = 150 nodes [default]\n  \
-        --large   200 packages x 5 versions = 1000 nodes\n  \
-        --stress  1000 packages x 10 versions = 10000 nodes"
-    )]
-    GenerateRepo {
-        /// Output directory
-        #[arg(short, long, default_value = "./test-repo")]
-        output: PathBuf,
-        /// Small preset
-        #[arg(long, conflicts_with_all = ["medium", "large", "stress", "packages", "versions"])]
-        small: bool,
-        /// Medium preset (default)
-        #[arg(long, conflicts_with_all = ["small", "large", "stress", "packages", "versions"])]
-        medium: bool,
-        /// Large preset
-        #[arg(long, conflicts_with_all = ["small", "medium", "stress", "packages", "versions"])]
-        large: bool,
-        /// Stress preset
-        #[arg(long, conflicts_with_all = ["small", "medium", "large", "packages", "versions"])]
-        stress: bool,
-        /// Number of packages
-        #[arg(short = 'n', long)]
-        packages: Option<usize>,
-        /// Versions per package
-        #[arg(short = 'V', long)]
-        versions: Option<usize>,
-        /// Maximum dependency depth
-        #[arg(short, long, default_value = "3")]
-        depth: usize,
-        /// Dependency probability (0.0-1.0)
-        #[arg(long, default_value = "0.3")]
-        dep_rate: f64,
-        /// Random seed
-        #[arg(long)]
-        seed: Option<u64>,
-    },
-
-    /// Generate package.py template
-    #[command(name = "gen-pkg")]
-    GenPkg {
-        /// Package identifier: name-version[--variant] (version starts at first `-` + digit)
-        /// Examples: maya-2026.1.0, my-plugin-1.0.0, maya-2026.1.0--win64
-        package_id: String,
-    },
-
-    /// Interactive shell with tab-completion
-    #[command(visible_alias = "sh")]
-    Shell,
-
-    /// Launch graphical interface
-    #[command(name = "gui")]
-    Gui,
-}

@@ -1,0 +1,13 @@
+[package]
+name = "bin-patch-elf"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "ELF runpath patching for relocatable bundles"
+
+[dependencies]
+object = { version = "0.38", features = ["write", "build"] }
+thiserror = "2.0"
+
+[dev-dependencies]
+goblin = { version = "0.10", features = ["mach64"] }

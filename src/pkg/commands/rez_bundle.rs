@@ -73,6 +73,7 @@ pub fn cmd_rez_bundle(storage: &Storage, args: &BundleArgs) -> ExitCode {
 
     let repo_root = bundle_root.join("packages");
     let mut relocated: HashSet<String> = HashSet::new();
+    let mut relocated_roots: Vec<(PathBuf, PathBuf)> = Vec::new();
 
     let resolved = match resolved_packages(&doc) {
         Ok(list) => list,
@@ -135,11 +136,14 @@ pub fn cmd_rez_bundle(storage: &Storage, args: &BundleArgs) -> ExitCode {
             pkg: Some(pkg_name.clone()),
         };
 
-        if let Err(err) = copy_package(&pkg, &pkg_root, &repo_root, &pkg.base, &pkg.version, &cp_args) {
-            eprintln!("rez bundle: {}", err);
-            return ExitCode::FAILURE;
-        }
-
+        let result = match copy_package(&pkg, &pkg_root, &repo_root, &pkg.base, &pkg.version, &cp_args) {
+            Ok(r) => r,
+            Err(err) => {
+                eprintln!("rez bundle: {}", err);
+                return ExitCode::FAILURE;
+            }
+        };
+        relocated_roots.extend(result.copied_pairs);
         relocated.insert(pkg_name);
 
         if let Some(loc) = location {
@@ -164,6 +168,12 @@ pub fn cmd_rez_bundle(storage: &Storage, args: &BundleArgs) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    if !args.no_lib_patch {
+        if let Err(e) = pkg_lib::bundle_patch::patch_bundle_libs(&bundle_root, &relocated_roots) {
+            log::warn!("rez bundle: lib patching failed: {}", e);
+        }
+    }
+
     if dest_is_zip {
         if let Err(err) = archive::zip_dir(&bundle_root, &dest_path, compression_level) {
             eprintln!("rez bundle: {}", err);
@@ -172,10 +182,6 @@ pub fn cmd_rez_bundle(storage: &Storage, args: &BundleArgs) -> ExitCode {
     }
 
     drop(temp_dir);
-
-    if !args.no_lib_patch {
-        eprintln!("rez bundle: lib patching is not implemented yet");
-    }
 
     ExitCode::SUCCESS
 }

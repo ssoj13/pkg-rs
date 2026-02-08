@@ -1,4 +1,4 @@
-//! Scan locations command.
+//! Scan locations (legacy implementation).
 
 use log::{error, info, warn};
 use pkg_lib::Storage;
