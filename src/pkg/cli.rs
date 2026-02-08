@@ -210,6 +210,21 @@ pub(crate) struct DiffArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+pub(crate) struct InterpretArgs {
+    /// Output format: shell name, dict, or table
+    #[arg(short, long)]
+    pub(crate) format: Option<String>,
+    /// Interpret in an empty environment
+    #[arg(long = "no-env")]
+    pub(crate) no_env: bool,
+    /// Parent variables to update rather than overwrite (or "all")
+    #[arg(long = "pv", alias = "parent-variables")]
+    pub(crate) parent_vars: Vec<String>,
+    /// File containing rex code
+    pub(crate) file: PathBuf,
+}
+
+#[derive(Args, Debug, Clone)]
 pub(crate) struct CpArgs {
     /// Package repository destination path
     #[arg(long = "dest-path")]
@@ -342,6 +357,127 @@ pub(crate) struct MemcacheArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+pub(crate) struct ReleaseArgs {
+    /// Release message
+    #[arg(short = 'm', long = "message")]
+    pub(crate) message: Option<String>,
+    /// Force the vcs type to use (currently only git)
+    #[arg(long = "vcs")]
+    pub(crate) vcs: Option<String>,
+    /// Allow release of version earlier than latest
+    #[arg(long = "no-latest")]
+    pub(crate) no_latest: bool,
+    /// Ignore existing tag (git)
+    #[arg(long = "ignore-existing-tag")]
+    pub(crate) ignore_existing_tag: bool,
+    /// Skip repository errors (git)
+    #[arg(long = "skip-repo-errors")]
+    pub(crate) skip_repo_errors: bool,
+    /// Do not prompt for release message
+    #[arg(long = "no-message")]
+    pub(crate) no_message: bool,
+    /// Build system to use (custom, make, cmake, cargo, python)
+    #[arg(short = 'b', long = "build-system")]
+    pub(crate) build_system: Option<String>,
+    /// Build process to use (local, central)
+    #[arg(long = "process", value_parser = ["local", "central"])]
+    pub(crate) process: Option<String>,
+    /// Select variants to build (zero-indexed)
+    #[arg(long = "variants")]
+    pub(crate) variants: Vec<usize>,
+    /// Arguments to pass to the build system
+    #[arg(long = "build-args", allow_hyphen_values = true)]
+    pub(crate) build_args: Option<String>,
+    /// Arguments to pass to a child build system
+    #[arg(long = "child-build-args", allow_hyphen_values = true)]
+    pub(crate) child_build_args: Option<String>,
+    /// Extra build args after --
+    #[arg(last = true)]
+    pub(crate) extra_args: Vec<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct SelftestArgs {
+    /// Verbose output
+    #[arg(short, long)]
+    pub(crate) verbose: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct TestArgs {
+    /// List package's tests and exit
+    #[arg(short = 'l', long = "list")]
+    pub(crate) list: bool,
+    /// Dry-run mode
+    #[arg(long = "dry-run")]
+    pub(crate) dry_run: bool,
+    /// Stop on first test failure
+    #[arg(short = 's', long = "stop-on-fail")]
+    pub(crate) stop_on_fail: bool,
+    /// Run tests in the current environment
+    #[arg(long = "inplace")]
+    pub(crate) inplace: bool,
+    /// Extra packages to add to test environment
+    #[arg(long = "extra-packages")]
+    pub(crate) extra_packages: Vec<String>,
+    /// Set package search path (os path separator)
+    #[arg(long = "paths")]
+    pub(crate) paths: Option<String>,
+    /// Don't load local packages
+    #[arg(long = "no-local", alias = "nl")]
+    pub(crate) no_local: bool,
+    /// Package to run tests on
+    pub(crate) pkg: String,
+    /// Tests to run (run all if not provided)
+    pub(crate) tests: Vec<String>,
+    /// Extra args after -- (only with a single test)
+    #[arg(last = true)]
+    pub(crate) extra_args: Vec<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct Yaml2pyArgs {
+    /// Path to yaml or directory containing package.yaml
+    pub(crate) path: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct BundleArgs {
+    /// Leave non-relocatable packages non-bundled
+    #[arg(short = 's', long = "skip-non-relocatable")]
+    pub(crate) skip_non_relocatable: bool,
+    /// Bundle even if not relocatable
+    #[arg(short = 'f', long = "force")]
+    pub(crate) force: bool,
+    /// Don't apply library patching within the bundle
+    #[arg(short = 'n', long = "no-lib-patch")]
+    pub(crate) no_lib_patch: bool,
+    /// Context to bundle (.rxt)
+    pub(crate) rxt: PathBuf,
+    /// Destination directory (must not exist)
+    pub(crate) dest_dir: PathBuf,
+    /// Write bundle as a directory instead of zip
+    #[arg(long = "dir")]
+    pub(crate) dir: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub(crate) struct BenchmarkArgs {
+    /// Output dir
+    #[arg(long = "out", default_value = "out")]
+    pub(crate) out: PathBuf,
+    /// Run every resolve N times and take the average
+    #[arg(long = "iterations", default_value = "1")]
+    pub(crate) iterations: usize,
+    /// Show histogram from results in --out
+    #[arg(long = "histogram")]
+    pub(crate) histogram: bool,
+    /// Compare RESULTS_DIR to results in --out
+    #[arg(long = "compare")]
+    pub(crate) compare: Option<PathBuf>,
+}
+
+#[derive(Args, Debug, Clone)]
 pub(crate) struct RezStubArgs {
     /// Additional args passed to command (not implemented yet)
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -389,7 +525,7 @@ pub enum Commands {
     /// rez help
     Help,
     /// rez interpret
-    Interpret(RezStubArgs),
+    Interpret(InterpretArgs),
     /// rez memcache
     Memcache(MemcacheArgs),
     /// rez pkg-cache
@@ -406,25 +542,25 @@ pub enum Commands {
         args: Vec<String>,
     },
     /// rez release
-    Release(RezStubArgs),
+    Release(ReleaseArgs),
     /// rez search
     Search(SearchArgs),
     /// rez selftest
-    Selftest(RezStubArgs),
+    Selftest(SelftestArgs),
     /// rez status
     Status(RezStubArgs),
     /// rez suite
     Suite(RezStubArgs),
     /// rez test
-    Test(RezStubArgs),
+    Test(TestArgs),
     /// rez view
     View(ViewArgs),
     /// rez yaml2py
-    Yaml2py(RezStubArgs),
+    Yaml2py(Yaml2pyArgs),
     /// rez bundle
-    Bundle(RezStubArgs),
+    Bundle(BundleArgs),
     /// rez benchmark
-    Benchmark(RezStubArgs),
+    Benchmark(BenchmarkArgs),
     /// rez pkg-ignore
     PkgIgnore(PkgIgnoreArgs),
     /// rez mv

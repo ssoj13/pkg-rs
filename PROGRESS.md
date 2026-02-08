@@ -23,19 +23,19 @@
 | `rez diff` | Native | Filesystem diff with external difftool fallback. |
 | `rez gui` | Stub | Passthrough placeholder. |
 | `rez help` | Stub | Passthrough placeholder. |
-| `rez interpret` | Stub | Passthrough placeholder. |
+| `rez interpret` | Native | Minimal rex interpreter for export/alias, dict/table/shell output. |
 | `rez memcache` | Native | Config-only status output (no memcache backend yet). |
 | `rez pkg-cache` | Native | Manage package metadata cache (list/stats/clear). |
 | `rez plugins` | Native | Lists packages that plug into a given host package. |
 | `rez python` | Stub | Passthrough placeholder. |
-| `rez release` | Stub | Passthrough placeholder. |
+| `rez release` | Native | Central build + optional git tagging. |
 | `rez search` | Native | Search packages with tags/latest/json. |
-| `rez selftest` | Stub | Passthrough placeholder. |
-| `rez test` | Stub | Passthrough placeholder. |
+| `rez selftest` | Native | Basic config/storage/solver checks. |
+| `rez test` | Native | Runs tests from package metadata with resolve + env. |
 | `rez view` | Native | View package metadata in JSON/text. |
-| `rez yaml2py` | Stub | Passthrough placeholder. |
-| `rez bundle` | Stub | Passthrough placeholder. |
-| `rez benchmark` | Stub | Passthrough placeholder. |
+| `rez yaml2py` | Native | Converts package.yaml to package.py. |
+| `rez bundle` | Native | Bundles context + packages into relocatable dir. |
+| `rez benchmark` | Native | Runs resolve benchmarks + histogram/compare. |
 | `rez pkg-ignore` | Native | `.ignore<version>` handling for filesystem repo. |
 | `rez mv` | Native | Copy + ignore source (filesystem repo). |
 | `rez rm` | Native | Remove package/family or ignored-since. |

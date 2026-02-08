@@ -79,22 +79,16 @@
 //! all_pkgs = storage.packages
 //! ```
 
-use crate::cache::Cache;
 use crate::dep::DepSpec;
 use crate::error::StorageError;
 use crate::package::Package;
-use crate::repo_ops::IGNORE_PREFIX;
-use jwalk::WalkDir;
+use crate::package_repository::scan_repositories;
 use log::{debug, info, trace, warn};
 use pyo3::prelude::*;
 
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-
-/// Default package file name.
-const PACKAGE_FILE: &str = "package.py";
 
 /// Package storage and discovery.
 ///
@@ -366,23 +360,15 @@ impl Storage {
 
 // Pure Rust API
 impl Storage {
-    /// Internal scan implementation with caching and parallel scanning.
+    /// Internal scan implementation using repository abstraction.
     pub fn scan_impl(paths: Option<&[PathBuf]>) -> Result<Self, StorageError> {
         info!("Storage: scanning for packages");
-        
-        // Initialize Python interpreter for Loader
-        // Safe to call multiple times - no-op if already initialized
+
         let _ = pyo3::Python::initialize();
         trace!("Storage: Python interpreter initialized");
 
-        // Load cache
-        let mut cache = Cache::load();
-        let cache_hits = Arc::new(Mutex::new(0usize));
-        let cache_misses = Arc::new(Mutex::new(0usize));
-
         let mut storage = Self::empty();
 
-        // Determine locations to scan
         let locations = match paths {
             Some(p) => {
                 debug!("Storage: using {} custom paths", p.len());
@@ -397,81 +383,44 @@ impl Storage {
 
         storage.locations = locations.clone();
 
-        // Collect all package.py files in parallel using jwalk
-        let package_files: Vec<PathBuf> = locations
-            .iter()
-            .filter(|loc| loc.exists())
-            .flat_map(|location| {
-                debug!("Storage: walking {}", location.display());
-                WalkDir::new(location)
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.file_type().is_file())
-                    .filter(|e| e.file_name().to_string_lossy() == PACKAGE_FILE)
-                    .map(|e| e.path())
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+        let mut cache = crate::cache::Cache::load();
+        let cfg = crate::config::get().ok();
 
-        debug!("Storage: found {} package.py files", package_files.len());
+        for repo in scan_repositories(&locations, cfg.as_deref(), &mut cache) {
+            for warning in repo.warnings() {
+                storage.warnings.push(warning.clone());
+            }
 
-        // Load packages (with cache)
-        for path in &package_files {
-            // Try cache first
-            if let Some(pkg) = cache.get(path) {
-                *cache_hits.lock().unwrap() += 1;
-                
-                // Check for duplicates
+            for pkg in repo.packages() {
                 if storage.packages.contains_key(&pkg.name) {
                     storage.warnings.push(format!(
                         "Duplicate package '{}': ignoring {} (first location wins)",
-                        pkg.name, path.display()
+                        pkg.name,
+                        pkg.package_source.clone().unwrap_or_default()
                     ));
                     continue;
                 }
-                
+
                 let name = pkg.name.clone();
                 let base = pkg.base.clone();
                 storage.packages.insert(name.clone(), pkg.clone());
                 storage.by_base.entry(base).or_default().push(name);
-                continue;
             }
 
-            // Cache miss - load from disk
-            *cache_misses.lock().unwrap() += 1;
-            
-            match storage.load_package_cached(path, &mut cache) {
-                Ok(()) => {},
-                Err(e) => {
-                    storage.warnings.push(format!(
-                        "Failed to load {}: {}",
-                        path.display(), e
-                    ));
-                }
-            }
-        }
-
-        // Scan toolsets for each location
-        for location in &locations {
+            let location = repo.location().to_path_buf();
             if location.exists() {
-                storage.scan_toolsets(location);
+                storage.scan_toolsets(&location);
             }
         }
 
-        // Sort versions for each base (newest first)
         for versions in storage.by_base.values_mut() {
             sort_versions_vec(versions);
         }
 
-        // Prune and save cache
         cache.prune();
         cache.save();
 
-        let hits = *cache_hits.lock().unwrap();
-        let misses = *cache_misses.lock().unwrap();
-        info!("Storage: found {} packages (cache: {} hits, {} misses)", 
-              storage.packages.len(), hits, misses);
-        
+        info!("Storage: found {} packages", storage.packages.len());
         Ok(storage)
     }
 
@@ -540,52 +489,6 @@ impl Storage {
             self.packages.insert(name.clone(), pkg);
             self.by_base.entry(base).or_default().push(name);
         }
-    }
-
-    /// Load a single package.py file and update cache.
-    fn load_package_cached(&mut self, path: &Path, cache: &mut Cache) -> Result<(), StorageError> {
-        use crate::loader::Loader;
-
-        trace!("Storage: loading package from {}", path.display());
-
-        if is_ignored_package(path) {
-            trace!("Storage: skipping ignored package at {}", path.display());
-            return Ok(());
-        }
-
-        // Use Loader to execute package.py and get Package
-        let mut loader = Loader::new(Some(false));
-        let mut pkg = loader.load_path(path).map_err(|e| {
-            debug!("Storage: failed to load {}: {}", path.display(), e);
-            StorageError::InvalidPackage {
-                path: path.to_path_buf(),
-                reason: e.to_string(),
-            }
-        })?;
-
-        // Set source path
-        pkg.package_source = Some(path.to_string_lossy().to_string());
-
-        // Update cache
-        cache.insert(path.to_path_buf(), pkg.clone());
-
-        // Check for duplicates (first wins with warning)
-        let name = pkg.name.clone();
-        if self.packages.contains_key(&name) {
-            self.warnings.push(format!(
-                "Duplicate package '{}': ignoring {} (first location wins)",
-                name, path.display()
-            ));
-            return Ok(());
-        }
-        
-        // Index it
-        let base = pkg.base.clone();
-        info!("Storage: loaded package {} ({})", name, base);
-        self.packages.insert(name.clone(), pkg);
-        self.by_base.entry(base).or_default().push(name);
-
-        Ok(())
     }
 
     /// Get all packages as a vector (for Solver).
@@ -687,22 +590,6 @@ impl Default for Storage {
     fn default() -> Self {
         Self::empty()
     }
-}
-
-fn is_ignored_package(path: &Path) -> bool {
-    let Some(version_dir) = path.parent() else {
-        return false;
-    };
-    let Some(family_dir) = version_dir.parent() else {
-        return false;
-    };
-
-    let Some(version) = version_dir.file_name().and_then(|s| s.to_str()) else {
-        return false;
-    };
-
-    let ignore_file = family_dir.join(format!("{}{}", IGNORE_PREFIX, version));
-    ignore_file.exists()
 }
 
 #[cfg(test)]

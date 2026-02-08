@@ -107,10 +107,11 @@ use crate::error::LoaderError;
 use crate::evar::{Action, Evar};
 use crate::package::Package;
 use log::{debug, trace};
+use moka::sync::Cache as MokaCache;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
-use std::ffi::CString;
 use std::collections::HashMap;
+use std::ffi::CString;
 use std::path::{Path, PathBuf};
 
 /// Extract full Python traceback from PyErr.
@@ -146,7 +147,7 @@ fn format_py_error(py: Python<'_>, err: &PyErr) -> String {
 #[derive(Debug, Clone)]
 pub struct Loader {
     /// Cache of loaded packages by path.
-    cache: HashMap<PathBuf, Package>,
+    cache: MokaCache<PathBuf, Package>,
 
     /// Whether to use caching.
     use_cache: bool,
@@ -161,8 +162,9 @@ impl Loader {
     #[new]
     #[pyo3(signature = (use_cache = None))]
     pub fn new(use_cache: Option<bool>) -> Self {
+        let cache = MokaCache::builder().max_capacity(10_000).build();
         Self {
-            cache: HashMap::new(),
+            cache,
             use_cache: use_cache.unwrap_or(true),
         }
     }
@@ -206,12 +208,12 @@ impl Loader {
 
     /// Clear the package cache.
     pub fn clear_cache(&mut self) {
-        self.cache.clear();
+        self.cache.invalidate_all();
     }
 
     /// Get cache size.
     pub fn cache_size(&self) -> usize {
-        self.cache.len()
+        self.cache.entry_count() as usize
     }
 
     /// Check if a path is cached.
@@ -223,7 +225,7 @@ impl Loader {
         format!(
             "Loader(cache={}, cached={})",
             self.use_cache,
-            self.cache.len()
+            self.cache.entry_count()
         )
     }
 }

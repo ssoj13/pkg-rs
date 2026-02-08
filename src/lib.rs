@@ -124,6 +124,7 @@
 //!
 //! - `python` (default) - Enable Python bindings via PyO3
 
+pub mod archive;
 pub mod app;
 pub mod py;
 pub mod config;
@@ -138,6 +139,7 @@ pub mod loader;
 pub mod name;
 pub mod package_name;
 pub mod package;
+pub mod package_repository;
 pub mod pip;
 pub mod plugins;
 pub mod repo_ops;

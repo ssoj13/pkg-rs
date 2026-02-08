@@ -31,13 +31,14 @@ pub fn cmd_rez_pkg_cache(args: &PkgCacheArgs) -> ExitCode {
     }
 
     if args.list {
-        if cache.entries.is_empty() {
+        let entries = cache.entries_snapshot();
+        if entries.is_empty() {
             println!("No cached packages.");
             return ExitCode::SUCCESS;
         }
 
         println!("Cached package entries:");
-        let mut items: Vec<_> = cache.entries.iter().collect();
+        let mut items: Vec<_> = entries.iter().collect();
         items.sort_by(|a, b| a.0.cmp(b.0));
         for (path, entry) in items {
             println!("  {} (mtime={})", path.display(), entry.mtime);

@@ -1186,3 +1186,18 @@ use_pyqt = False
 
 # Turn GUI threading on/off. You would only turn off for debugging purposes.
 gui_threads = True
+
+
+###############################################################################
+###############################################################################
+# ARCHIVE (pkg-rs)
+###############################################################################
+###############################################################################
+
+# Archive options. Zip is the only supported format in pkg-rs.
+archive = {
+    "zip": {
+        # Deflate compression level (0-9). None uses library default.
+        "compression_level": 6
+    }
+}

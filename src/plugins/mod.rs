@@ -156,7 +156,7 @@ impl PluginRegistry {
         ]);
         registry.register_builtin(PluginType::PackageFilter, &["builtin"]);
         registry.register_builtin(PluginType::PackageOrderer, &["builtin"]);
-        registry.register_builtin(PluginType::PackageRepository, &["filesystem"]);
+        registry.register_builtin(PluginType::PackageRepository, &["filesystem", "memory"]);
         registry.register_builtin(PluginType::Command, &["builtin"]);
 
         registry

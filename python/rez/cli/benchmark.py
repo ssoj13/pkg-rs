@@ -13,6 +13,7 @@ import subprocess
 import platform
 import sys
 import time
+import zipfile
 
 
 # globals
@@ -234,7 +235,6 @@ def do_resolves():
 
 def run_benchmark():
     from rez import module_root_path
-    from rez.utils.execution import Popen
 
     if os.path.exists(out_dir):
         print(
@@ -247,12 +247,9 @@ def run_benchmark():
     print("Writing results to %s..." % out_dir)
 
     # extract package repo
-    filepath = os.path.join(module_root_path, "data", "benchmarking", "packages.tar.gz")
-    proc = Popen(
-        ["tar", "-xf", filepath],
-        cwd=out_dir
-    )
-    proc.wait()
+    filepath = os.path.join(module_root_path, "data", "benchmarking", "packages.zip")
+    with zipfile.ZipFile(filepath, "r") as zf:
+        zf.extractall(out_dir)
 
     load_packages()
     do_resolves()
