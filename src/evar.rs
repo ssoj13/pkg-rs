@@ -172,19 +172,34 @@ impl Evar {
     /// # Arguments
     /// * `name` - Variable name
     /// * `value` - Variable value (may contain {TOKENS})
-    /// * `action` - Optional merge action: "set", "append", "insert" (default: "append")
+    /// * `action` - Optional: "set", "append", "insert", "prepend" or Action.Set/Append/Insert/Prepend (default: append)
     ///
     /// # Python Example
     /// ```python
     /// e = Evar("PATH", "/opt/bin")  # default append
     /// e = Evar("ROOT", "/opt", action="set")
+    /// e = Evar("PATH", "{root}/bin", Action.Prepend)  # Rez-style
     /// ```
     #[new]
     #[pyo3(signature = (name, value, action = None))]
-    pub fn py_new(name: String, value: String, action: Option<&str>) -> PyResult<Self> {
+    pub fn py_new(
+        name: String,
+        value: String,
+        action: Option<&Bound<'_, pyo3::types::PyAny>>,
+    ) -> PyResult<Self> {
         let action = match action {
-            Some(s) => Action::from_str(s)?,
             None => Action::Append,
+            Some(obj) => {
+                if let Ok(a) = obj.extract::<Action>() {
+                    a
+                } else if let Ok(s) = obj.extract::<String>() {
+                    Action::from_str(&s).map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?
+                } else {
+                    return Err(pyo3::exceptions::PyTypeError::new_err(
+                        "action must be str or Action (Set, Append, Insert, Prepend)",
+                    ));
+                }
+            }
         };
         Ok(Self { name, value, action })
     }
@@ -195,10 +210,18 @@ impl Evar {
         self.action.as_str()
     }
 
-    /// Set action from string
+    /// Set action from string or Action enum
     #[setter]
-    pub fn set_action(&mut self, action: &str) -> PyResult<()> {
-        self.action = Action::from_str(action)?;
+    pub fn set_action(&mut self, action: &Bound<'_, pyo3::types::PyAny>) -> PyResult<()> {
+        self.action = if let Ok(a) = action.extract::<Action>() {
+            a
+        } else if let Ok(s) = action.extract::<String>() {
+            Action::from_str(s.as_str()).map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?
+        } else {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "action must be str or Action",
+            ));
+        };
         Ok(())
     }
 
@@ -230,7 +253,17 @@ impl Evar {
             .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err("missing 'value'"))?
             .extract()?;
         let action = match dict.get_item("action")? {
-            Some(a) => Action::from_str(a.extract::<String>()?.as_str())?,
+            Some(a) => {
+                if let Ok(act) = a.extract::<Action>() {
+                    act
+                } else if let Ok(s) = a.extract::<String>() {
+                    Action::from_str(s.as_str())?
+                } else {
+                    return Err(pyo3::exceptions::PyTypeError::new_err(
+                        "action must be str or Action",
+                    ));
+                }
+            }
             None => Action::Append,
         };
         Ok(Self { name, value, action })
