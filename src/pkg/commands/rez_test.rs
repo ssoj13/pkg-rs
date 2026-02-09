@@ -253,7 +253,13 @@ fn run_test(
     // Run pre_test_commands rex-style and merge env mutations, then re-solve
     if let Some(pre) = pkg.pre_test_commands.as_ref() {
         let root_path = package_root_from_source(pkg.package_source.as_ref());
-        if let Err(err) = apply_package_commands(&mut env, pkg, pre, root_path.as_deref()) {
+        if let Err(err) = apply_package_commands(
+            &mut env,
+            pkg,
+            pre,
+            root_path.as_deref(),
+            Some("pre_test_commands"),
+        ) {
             return TestOutcome::Failed(format!("pre_test_commands failed: {}", err));
         }
         env = match env.solve_impl(10, true) {

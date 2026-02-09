@@ -41,11 +41,14 @@ env = _RexEnv()
 
 /// Run package command source (rex-like) and merge recorded env mutations into `env`.
 /// `root_path`: package root (e.g. parent of package.py); used as `ROOT` in the script.
+/// If `invoke_name` is Some (e.g. "pre_commands"), after executing the source the callable
+/// with that name is invoked so that function-style blocks mutate env.
 pub fn apply_package_commands(
     env: &mut Env,
     package: &Package,
     command_source: &str,
     root_path: Option<&Path>,
+    invoke_name: Option<&str>,
 ) -> Result<(), String> {
     let root_str = root_path
         .map(|p| p.to_string_lossy().to_string())
@@ -75,6 +78,15 @@ pub fn apply_package_commands(
             .map_err(|e| format!("rex source: {e}"))?;
         py.run(source.as_c_str(), Some(&globals), None)
             .map_err(|e| format!("rex exec: {e}"))?;
+
+        if let Some(name) = invoke_name {
+            let callable = globals.get_item(name).ok().flatten();
+            if let Some(ref callable) = callable {
+                if callable.is_callable() {
+                    callable.call0().map_err(|e| format!("rex invoke {name}: {e}"))?;
+                }
+            }
+        }
 
         let env_obj = globals
             .get_item("env")

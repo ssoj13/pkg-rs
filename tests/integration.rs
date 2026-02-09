@@ -2,6 +2,7 @@
 //!
 //! Uses tempdir to create isolated test repositories.
 
+use pkg_lib::rex::{apply_package_commands, package_root_from_source, packages_in_rex_order};
 use pkg_lib::{Solver, Storage};
 use std::fs;
 use std::path::Path;
@@ -537,4 +538,78 @@ fn test_direct_class_access() {
 
     let storage = Storage::scan_impl(Some(&[dir.path().to_path_buf()])).unwrap();
     assert!(storage.has("direct-3.0.0"));
+}
+
+// =============================================================================
+// Rex (pre_commands / commands / post_commands) integration
+// =============================================================================
+
+/// Package with pre_commands that set REX_VAR; after env merge + rex we expect the var.
+#[test]
+fn test_rex_pre_commands_mutate_env() {
+    let dir = TempDir::new().unwrap();
+    create_package_custom(
+        dir.path(),
+        "rexpkg",
+        "1.0.0",
+        r#"from pkg import Package, Env, Evar
+
+def pre_commands():
+    env.REX_VAR.set("from_pre_commands")
+
+def get_package():
+    p = Package("rexpkg", "1.0.0")
+    e = Env("default")
+    e.add(Evar("INITIAL", "ok", "set"))
+    p.add_env(e)
+    return p
+"#,
+    );
+
+    let storage = Storage::scan_impl(Some(&[dir.path().to_path_buf()])).unwrap();
+    let mut pkg = storage.resolve("rexpkg-1.0.0").unwrap().clone();
+    pkg.solve_version_impl(&storage.all_packages()).unwrap();
+    let mut env = pkg._env("default", true).expect("default env");
+
+    let rex_order = packages_in_rex_order(&pkg);
+    let root = package_root_from_source(pkg.package_source.as_ref());
+    for p in &rex_order {
+        if let Some(ref pre) = p.pre_commands {
+            apply_package_commands(&mut env, p, pre, root.as_deref(), Some("pre_commands")).unwrap();
+        }
+    }
+
+    let evar_names: Vec<String> = env.evars.iter().map(|e| e.name.clone()).collect();
+    assert!(evar_names.contains(&"INITIAL".to_string()));
+    assert!(evar_names.contains(&"REX_VAR".to_string()));
+    let rex_val = env.evars.iter().find(|e| e.name == "REX_VAR").map(|e| e.value.as_str()).unwrap_or("");
+    assert_eq!(rex_val, "from_pre_commands");
+}
+
+// =============================================================================
+// pkg test flow: pre_test_commands + tests section (load and structure)
+// =============================================================================
+
+/// Package with pre_test_commands and tests; we only assert load and fields are present.
+#[test]
+fn test_package_test_section_loaded() {
+    let dir = TempDir::new().unwrap();
+    create_package_custom(
+        dir.path(),
+        "testpkg",
+        "1.0.0",
+        r#"from pkg import Package
+
+def pre_test_commands():
+    env.TEST_SETUP.set("done")
+
+def get_package():
+    p = Package("testpkg", "1.0.0")
+    return p
+"#,
+    );
+
+    let storage = Storage::scan_impl(Some(&[dir.path().to_path_buf()])).unwrap();
+    let pkg = storage.get("testpkg-1.0.0").unwrap();
+    assert!(pkg.pre_test_commands.is_some());
 }

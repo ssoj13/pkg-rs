@@ -26,7 +26,7 @@ pub struct BindModule {
 }
 
 const BUILTIN_NATIVE: &[&str] = &["platform", "arch", "os"];
-const BUILTIN_PYTHON: &[&str] = &["python", "rez", "rezgui", "setuptools", "pip"];
+const BUILTIN_PYTHON: &[&str] = &["python", "rez", "setuptools", "pip"];
 
 /// Build registry: built-in (native + python) + config extra (Python) − config remove.
 pub fn registry() -> Vec<BindModule> {

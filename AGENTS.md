@@ -265,14 +265,15 @@ Current (pkg-rs):
 Package (envs/evars, commands fields)
   |
   v
-pkg env -> solve -> _env -> stamp -> solve_impl
+pkg env -> solve -> merge envs -> run pre_commands -> commands -> post_commands (rex)
   |
   v
-Emit/commit env
-  |
-  v
-NOTE: pre_commands/commands/post_commands are now executed in `pkg env` (rex); pre_test_commands in `pkg test` (rex).
+Expand tokens -> emit/commit env or run command after --
 ```
+- `pkg test`: resolve -> pre_test_commands (rex) -> run tests section.
+- Bind: config `bind_modules_extra` / `bind_modules_remove` control which modules are available for `rez bind`.
+- Shell: env output formats `shell` / `export` / `set` and script generation by extension (`.cmd`, `.ps1`, `.sh`) in `commands/env.rs`; append/insert semantics per shell.
+- Suite visibility: directories that are parents of a `PATH` entry and contain `suite.yaml` are visible; see `rez_suite.rs` / `rez_status.rs` (`visible_suite_paths`).
 
 Target (Rez parity, implemented):
 ```
@@ -828,9 +829,10 @@ pkg_lib (lib.rs)
 | Toolsets | `src/toolset.rs` | `ToolsetDef`, `scan_toolsets_dir` |
 | Errors | `src/error.rs` | All error enums |
 | Solver | `src/solver/mod.rs` | `Solver`, `PackageIndex` |
+| Filters/orderers | `src/solver/filter.rs`, `order.rs` | `PackageFilterList`, `PackageOrderList` (from config `package_filter`, `package_orderers` when backend=pkg) |
 | PubGrub | `src/solver/provider.rs` | `PubGrubProvider` |
 | Ranges | `src/solver/ranges.rs` | `depspec_to_ranges` |
-| Cache | `src/cache.rs` | `Cache` |
+| Cache | `src/cache.rs` | `Cache` (package.py path → entry; mtime invalidation; pkg-cache CLI) |
 | Bundle lib patch | `src/bundle_patch.rs` | `patch_bundle_libs`, uses `crates/bin-patch` (ELF/Mach-O) |
 | Rex (package commands) | `src/rex.rs` | `apply_package_commands`, `packages_in_rex_order`, `package_root_from_source`; used by `pkg env` and `pkg test` |
 | Bind modules | `src/bind_module.rs` | Registry (Native/Python), `list_names`, `search_names`, `bind_one`, `run_python_bind_batch`; config: `plugins.pkg_rs.bind_modules_extra` / `bind_modules_remove` |
@@ -846,6 +848,14 @@ pkg_lib (lib.rs)
 | `pkg scan` | `commands/scan.rs` | Scan locations |
 | `pkg test <pkg>` | `commands/rez_test.rs` | Run package tests (pre_test_commands + tests section) |
 | `pkg shell` | `shell.rs` | Interactive mode |
+
+### Caching (TODO.md parity)
+
+| Cache | Status | Location / CLI |
+|-------|--------|----------------|
+| **Package cache** | Implemented | `src/cache.rs`; path+mtime; `pkg rez pkg-cache` (clear, stats, list). Used by storage/repo scan. |
+| **Resolve cache** | Not implemented | Would key on (request, package set hash) → solution; future hook in solver. |
+| **Memcache** | Stub | Config `memcached_uri` read; `pkg rez memcache` (clear, stats) reports "not active". |
 
 ---
 

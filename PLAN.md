@@ -1,88 +1,122 @@
-# PLAN — Текущий фокус и следующие шаги
+# PLAN — План, статус команд и парность
 
-Краткий план «что дальше»; детальные планы по билду/pip и Rez parity — в [md/PLAN.md](md/PLAN.md) и [TODO.md](TODO.md). **Сводка парности и оценка:** [PARITY.md](PARITY.md).
-
----
-
-## Текущее состояние (кратко)
-
-- **pkg-rs**: сканирование package.py, резолвер (PubGrub/Rez), env/evars, **pre/commands/post при pkg env** (rex), **pre_test + tests при pkg test**, запуск приложений, build, pip import, GUI, **все rez-команды нативно** (bind — модульный регистр с extra/remove в конфиге); неподдерживаемые опции → ошибка.
-- **bin-patch** (`crates/bin-patch`): ELF/Mach-O in-place патчинг для релоцируемых бандлов.
-- **Windows**: санитизация путей к python/pip после pip-импорта.
+Единый документ: текущее состояние, статус всех команд, что сделано, что в работе, что прибить. Детали: [md/PLAN.md](md/PLAN.md), [TODO.md](TODO.md), [PARITY.md](PARITY.md).
 
 ---
 
-## Приоритетные задачи (по порядку)
+## 1. Текущее состояние (кратко)
 
-### 1. Выполнение команд пакета при `pkg env` (Rez parity) — сделано
-
-**Было:** при `pkg env` применялись только env/evars из package.py. Поля `pre_commands`, `commands`, `post_commands` не выполнялись.
-
-**Сделано:**
-- Добавлен модуль **`src/rex.rs`**: bootstrap Python (proxy env с set/append/insert), `apply_package_commands(env, package, command_source, root_path)` — выполняет rex-подобный код и мержит записанные _evars в Env; `packages_in_rex_order(pkg)` — порядок deps затем корневой пакет; `package_root_from_source(package_source)` — ROOT из пути к package.py.
-- В **`src/pkg/commands/env.rs`** после получения env из `pkg._env()`: для каждой фазы (pre_commands, commands, post_commands) и каждого пакета в порядке deps → root вызывается `apply_package_commands`; при ошибке выполнения — вывод в stderr и ExitCode::FAILURE.
-- Порядок как в Rez: все pre_commands (deps + self), затем все commands, затем все post_commands. Если у пакета нет команд — этап пропускается.
-
-**Файлы:** `src/rex.rs`, `src/lib.rs` (pub mod rex), `src/pkg/commands/env.rs`.
+- **pkg-rs**: package.py, резолвер (PubGrub/Rez), env + **pre/commands/post** (rex) при `pkg env`, **pre_test + tests** при `pkg test`, build, pip, **все rez-команды нативно** (bind — модульный регистр, extra/remove в конфиге). Неподдерживаемые опции → ошибка.
+- **bin-patch** (`crates/bin-patch`): ELF/Mach-O для релоцируемых бандлов.
+- **Windows**: санитизация путей python/pip после pip-импорта.
 
 ---
 
-### 2. Тесты пакетов (pre_test_commands + тестовые записи) — сделано
+## 2. Статус команд (сводка)
 
-**Цель:** выполнение `pre_test_commands` и записей из секции `tests` с отчётом (Rez parity для тестирования пакетов).
+**Легенда:** **Native** — реализация в Rust (или Rust + точечный вызов Python API). **Internal** — служебная команда.
 
-**Сделано:**
-- Команда `pkg test` уже была (`src/pkg/commands/rez_test.rs`): парсинг секции `tests` (Rez-схема: command, requires, run_on, on_variants), фильтры по имени и run_on, запуск shell/exec, отчёт PASS/FAIL/SKIP.
-- **pre_test_commands** теперь выполняются через **rex** (как в п.1): `apply_package_commands` + мерж в env, затем повторный `solve_impl` перед запуском каждого теста. Скрипт может менять окружение (env.PATH.append и т.д.).
-- **--inplace**: загрузка контекста из `REZ_RXT_FILE` поддерживает и наш формат .rxt (resolved_packages[].base, .version), и формат Rez (resolved_packages[].variables.name/.version).
+### 2.1 Ядро
 
----
+| Команда | Статус | Описание |
+|---------|--------|----------|
+| **env** | Native | Резолв, merge env, pre/commands/post (rex), stamp, expand; вывод или запуск после `--`. |
+| **build** | Native | package.py, варианты, build context, pre_build_commands, build system (custom/make/cmake/cargo/python), установка. |
+| **build-env** | Internal | Окружение сборки из build.rxt. |
+| **pip** | Native | Поиск python/pip, pip install --target, метаданные, копирование в репо, package.py. |
 
-### 3. Passthrough → native — сделано
+### 2.2 Конфиг и контекст
 
-**Было:** bind/context/status/suite при неподдерживаемых флагах делегировали в Python rez (passthrough).
+| Команда | Статус | Описание |
+|---------|--------|----------|
+| **config** | Native | Чтение rezconfig, пути, поля, JSON. |
+| **context** | Native | .rxt (REZ_RXT_FILE), --print-request/resolve, --format, --which и др.; неизвестное → ошибка. |
+| **status** | Native | Без аргументов: версия, контекст, suites; с аргументами → ошибка. |
+| **suite** | Native | --list, --create, DIR; неизвестное → ошибка. |
 
-**Сделано:** все четыре команды полностью нативные. bind: --list/--search выводят список/поиск по имени; неизвестный пакет или флаги → ошибка. context/status/suite: неизвестные флаги/аргументы → ошибка. Модуль `rez_passthrough` удалён.
+### 2.3 Bind
 
----
+| Команда | Статус | Описание |
+|---------|--------|----------|
+| **bind** | Native | Регистр: Native (platform, arch, os) + Python (python, rez, rezgui, setuptools, pip). Конфиг: `bind_modules_extra` / `bind_modules_remove`. --list / --search / &lt;name&gt; / --quickstart. |
 
-### 4. Пути к python/pip на Windows
+### 2.4 Поиск, граф, репозиторий
 
-**Цель:** нигде не записывать и не «пробивать» абсолютные пути к python/pip в конфиги/скрипты под установку (python-environments, modules, packages), чтобы не ломать переносимость.
+| Команда | Статус |
+|---------|--------|
+| **search, view, depends, diff** | Native |
+| **cp, mv, rm, release, pkg-ignore, pkg-cache** | Native |
 
-**Уже сделано:** санитизация в скриптах после pip-импорта.
+### 2.5 Тесты и прочее
 
-**Дополнительно:** при появлении багов — искать места, где пути могут попадать в конфиг или в файлы репозитория, и править (не писать абсолютные пути или релативизировать при бандле).
+| Команда | Статус |
+|---------|--------|
+| **test** | Native (pre_test rex, tests, --inplace) |
+| **interpret** | Native |
+| **plugins, memcache** | Native |
+| **bundle, benchmark, yaml2py** | Native |
+| **python, shell, gui, help, version, completions, selftest** | Native |
 
----
-
-### 5. Документация и тесты
-
-- Обновить USERGUIDE/AGENTS при изменении поведения (например после п.1).
-- Добавить интеграционные/регрессионные тесты на выполнение команд пакета и на тесты пакетов (после п.1–2).
-- При необходимости — краткие примеры bundle/pip/rez config в README или docs.
-
----
-
-## Парность и оценка
-
-Сводка «что сделано / что надо» и оценка по категориям — в **[PARITY.md](PARITY.md)**. Кратко: конфиг, package schema, env+rex, тесты пакетов, все CLI команды (включая bind с модулями) — готовы; типичный сценарий ~85% parity; в приоритете — интеграционные тесты, документация, затем filters/orderers в резолвере, shell plugins, кэши.
-
----
-
-## Ссылки
-
-- [PARITY.md](PARITY.md) — парность с Rez, что сделано, что осталось, оценка.
-- [STATUS.md](STATUS.md) — статус каждой команды.
-- [md/PLAN.md](md/PLAN.md) — интеграционный план (build, pip, плагины, фазы).
-- [TODO.md](TODO.md) — Rez parity roadmap, конфиг, CLI, репозитории, резолвер.
-- [AGENTS.md](AGENTS.md) — архитектура, потоки данных, места в коде.
+**Итог:** все команды Native или Internal; passthrough удалён.
 
 ---
 
-## Порядок выполнения
+## 3. Сделано (отмечено ✅)
 
-1. ~~п.1 (выполнение pre/commands/post при `pkg env`)~~ — сделано.
-2. ~~п.2 (тесты пакетов: pre_test_commands + rex, .rxt inplace)~~ — сделано.
-3. ~~п.3 (passthrough → native)~~ — сделано.
-4. **Дальше:** п.4–5 по необходимости.
+| # | Задача | Отметка |
+|---|--------|--------|
+| 1 | Выполнение pre/commands/post при `pkg env` (rex) | ✅ |
+| 2 | Тесты пакетов: pre_test_commands (rex) + секция tests, .rxt inplace | ✅ |
+| 3 | Passthrough → native (bind, context, status, suite) | ✅ |
+| 4 | Bind: модульный регистр, extra/remove в конфиге | ✅ |
+
+---
+
+## 4. В работе / надо сделать
+
+| # | Задача | Приоритет | Пометка |
+|---|--------|-----------|--------|
+| 5 | Пути python/pip на Windows | по багам | Уже санитизация; при багах — не писать абсолютные пути в конфиг/репо. |
+| 6 | Документация | высокий | ✅ USERGUIDE/AGENTS обновлены; примеры конфига (bind, resolver, filter/orderers); rex, test, shell, suite, caches. |
+| 7 | Интеграционные тесты | высокий | ✅ rex (pre_commands invoke), test section (pre_test_commands loaded). |
+| 8 | Filters/orderers в резолвере | средний | ✅ Уже подключены (backend=pkg + plugins); документировано. |
+| 9 | Shell plugins, suite visibility | средний | ✅ Форматы env и правила suite описаны в USERGUIDE/AGENTS. |
+| 10 | Кэши (resolve, memcache, package) | низкий | ✅ Package cache реализован; resolve/memcache задокументированы в AGENTS/USERGUIDE. |
+
+---
+
+## 5. Python каталог — что можно прибить
+
+Используется из Rust:
+
+- **rez.config** — загрузка конфига (Config, _replace_config).
+- **rez.package_bind** — bind для стратегии Python (bind_package, _print_package_list).
+- **rez.resolved_context** — резолвер Rez (ResolvedContext).
+- **rezplugins** — директория должна существовать (ensure_rez_on_sys_path); конфиг тянет плагины.
+
+**Удалено:**
+
+| Каталог | Причина |
+|---------|--------|
+| **python/rez/tests/** | Тесты Rez не запускаются из pkg-rs; свой selftest в Rust. ✅ |
+| **python/rezgui/** | Не используем; убран из списка bind-модулей. ✅ |
+
+**Оставлять:** `python/rez/` (без tests), `python/rezplugins/`, `python/pkg.pyi`. Удаление `rez/cli` ломает часть bind-модулей (импорт _main). Удаление `rez/data` может сломать config/system.
+
+---
+
+## 6. Порядок выполнения
+
+1. ~~п.1–4~~ — сделано.
+2. ~~Консолидация~~ — PLAN + STATUS в один файл, STATUS.md удалён, ссылки обновлены. ✅
+3. ~~Python: удалить `python/rez/tests/`~~ — удалено (тесты Rez не используются из pkg-rs). ✅
+4. **Дальше:** п.6 (документация), п.7 (интеграционные тесты), п.8–10.
+
+---
+
+## 7. Ссылки
+
+- [PARITY.md](PARITY.md) — парность с Rez, оценка (~85%).
+- [md/PLAN.md](md/PLAN.md) — интеграционный план (build, pip, плагины).
+- [TODO.md](TODO.md) — Rez parity roadmap.
+- [AGENTS.md](AGENTS.md) — архитектура, потоки данных.

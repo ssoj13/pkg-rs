@@ -117,7 +117,7 @@ Rez-style layering: `rezconfig.py` → `REZ_CONFIG_FILE` → `~/.rezconfig` → 
 | `pkg gui` | Node editor GUI (graph, solve, export env) |
 | `pkg version` | Version and build info |
 
-Full status and per-command behaviour: [STATUS.md](STATUS.md).
+Full status and per-command behaviour: [PLAN.md](PLAN.md) (§2).
 
 ---
 
@@ -164,8 +164,7 @@ p.add_env(env)
 | Doc | Description |
 |-----|-------------|
 | [PARITY.md](PARITY.md) | Rez parity: what's done, what's left, rough estimate (~85% for typical use) |
-| [STATUS.md](STATUS.md) | Status of all commands (native, internal) |
-| [PLAN.md](PLAN.md) | Priorities and next steps |
+| [PLAN.md](PLAN.md) | Plan, status of all commands (§2), done/todo (§3–4), Python dir (§5) |
 | [AGENTS.md](AGENTS.md) | Architecture, dataflow, codepaths (contributors) |
 | [md/USERGUIDE.md](md/USERGUIDE.md) | Workflows and usage |
 

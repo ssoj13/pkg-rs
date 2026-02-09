@@ -95,5 +95,5 @@
 ## Ссылки
 
 - [PLAN.md](PLAN.md) — приоритеты и порядок работ.
-- [STATUS.md](STATUS.md) — статус каждой команды.
+- [PLAN.md](PLAN.md) — план, статус команд (§2), сделано/надо (§3–4), Python каталог (§5).
 - [TODO.md](TODO.md) — детальный Rez parity roadmap.

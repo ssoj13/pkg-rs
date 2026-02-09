@@ -68,11 +68,17 @@ pub fn cmd_env(
         ("commands", |p| p.commands.as_ref()),
         ("post_commands", |p| p.post_commands.as_ref()),
     ];
-    for (_, get_source) in phases {
+    for (phase_name, get_source) in phases {
         for pkg_ref in packages_in_rex_order(&pkg) {
             if let Some(source) = get_source(pkg_ref) {
                 let root = package_root_from_source(pkg_ref.package_source.as_ref());
-                if let Err(e) = apply_package_commands(&mut env, pkg_ref, source, root.as_deref()) {
+                if let Err(e) = apply_package_commands(
+                    &mut env,
+                    pkg_ref,
+                    source,
+                    root.as_deref(),
+                    Some(phase_name),
+                ) {
                     eprintln!("Package command execution failed ({}): {}", pkg_ref.name, e);
                     return ExitCode::FAILURE;
                 }

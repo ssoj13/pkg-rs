@@ -44,8 +44,18 @@ Example `~/.rezconfig`:
 packages_path = ["D:/packages", "D:/tools"]
 local_packages_path = "D:/packages-local"
 release_packages_path = "//server/packages"
+
+# Resolver: "pkg" (PubGrub) or "rez" (Rez solver)
 plugins = {"pkg_rs": {"resolver_backend": "pkg"}}
+
+# Bind: add/remove modules for rez bind (e.g. extra platform/arch, or remove pip)
+# bind_modules_extra = ["mymodule"]
+# bind_modules_remove = ["rezgui"]
 ```
+
+Config reference (under `plugins.pkg_rs`): `resolver_backend` (`"pkg"` | `"rez"`), `bind_modules_extra`, `bind_modules_remove`. See README for full bind/config details.
+
+When using the **pkg** (PubGrub) resolver, Rez-style `package_filter` and `package_orderers` from config are applied if the builtin plugin is enabled (`plugins.pkg_rs.package_filters` / `plugins.pkg_rs.package_orderers` list includes `builtin` or `*`). These control which package versions are considered and their preference order during resolution.
 
 ## Locations and Repositories
 
@@ -115,6 +125,16 @@ pkg env maya -- "C:\Program Files\Autodesk\Maya2024\bin\maya.exe"
 
 Why `--`: everything after `--` is passed to the command, not to pkg.
 
+### Rex: pre_commands, commands, post_commands
+
+When you run `pkg env`, the resolved package (and its dependencies) can define
+Rez-style command blocks in `package.py`: `pre_commands`, `commands`, `post_commands`.
+These are executed in order (rex) and can change the environment (e.g. set or append
+variables). After that, tokens like `{ROOT}` are expanded and the final env is
+emitted or used for the command after `--`.
+
+So: resolve → merge envs → run pre_commands → commands → post_commands → expand tokens → output/run.
+
 ### Multiple packages (ad-hoc toolset)
 
 ```powershell
@@ -125,14 +145,31 @@ pkg env maya redshift ocio -- "C:\Program Files\Autodesk\Maya2024\bin\maya.exe"
 builds a merged environment. This is the simplest way to compose tools without
 creating a dedicated toolset file.
 
-### Output formats
+### Output formats (shell plugins)
+
+Formats follow shell semantics so you can source or eval the output:
 
 ```powershell
-pkg env maya -f shell   # NAME=value (default)
-pkg env maya -f export  # export NAME="value"
-pkg env maya -f set     # set NAME=value
+pkg env maya -f shell   # NAME=value (default; generic)
+pkg env maya -f export  # export NAME="value" (bash/sh)
+pkg env maya -f set     # set NAME=value (cmd.exe)
 pkg env maya -f json    # JSON
 ```
+
+With `-o <file>`, the extension picks the script format: `.cmd`/`.bat` (cmd), `.ps1` (PowerShell), `.sh` or other (bash). Append/insert actions are emitted correctly for each shell.
+
+## Testing Packages
+
+`pkg test` runs package tests for the resolved context:
+
+```powershell
+pkg test maya              # resolve maya, run pre_test_commands then tests
+pkg test maya --inplace    # run tests in current dir using .rxt
+```
+
+Flow: resolve request → run `pre_test_commands` (rex) → run each entry in the
+package `tests` section (e.g. executable or rex block). Use `pkg test` to
+validate a package in a resolved environment.
 
 ## Build Packages
 
@@ -176,6 +213,10 @@ pkg graph maya -R            # reverse dependencies
 
 Why use it: it shows why a package pulls in other tools and helps explain
 version conflicts.
+
+## Suites and visibility
+
+A **suite** is a directory that contains `suite.yaml` (created by `pkg rez suite --create DIR`). **Visible suites** are those that appear in your environment: we look at `PATH` and treat any parent directory of a `PATH` entry that contains `suite.yaml` as a visible suite. `pkg rez status` and `pkg rez suite --list` report these. Use suites to group tools and control which contexts are discoverable.
 
 ## Interactive Shell
 
@@ -291,6 +332,14 @@ Key rules:
 - Actions: `set`, `append`, `insert`.
 - Tokens like `{MAYA_LOCATION}` are expanded by `pkg env -s`.
 
+Optional Rez-style command blocks (executed at `pkg env` or `pkg test`):
+
+- `pre_commands`, `commands`, `post_commands` — run at `pkg env` (rex); can mutate env.
+- `pre_test_commands` — run before tests at `pkg test`.
+- `tests` — list of test entries (e.g. commands or rex) run by `pkg test`.
+
+Use callables or string/list source; the loader captures them from `package.py`.
+
 ## Useful CLI Flags
 
 ```powershell
@@ -301,6 +350,11 @@ pkg -l            # log to pkg.log next to binary
 pkg -l C:\tmp\pkg.log
 pkg -x maya*      # exclude pattern (repeatable)
 ```
+
+## Caches
+
+- **Package cache**: Scan results are cached by path and mtime (`pkg.cache` next to the binary). Use `pkg rez pkg-cache --stats` / `--list` / `--clear`.
+- **Memcache**: Rez-style resolve memcache is not active yet; `pkg rez memcache` shows config (`memcached_uri`) and status.
 
 ## Troubleshooting
 
