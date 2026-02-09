@@ -490,6 +490,32 @@ pub(crate) struct BenchmarkArgs {
     pub(crate) compare: Option<PathBuf>,
 }
 
+/// rez bind — привязка системного софта как пакетов (platform, arch, python, pip, …).
+#[derive(Args, Debug, Clone)]
+pub(crate) struct BindArgs {
+    /// Список доступных модулей bind
+    #[arg(short = 'l', long = "list")]
+    pub(crate) list: bool,
+    /// Поиск модулей по подстроке
+    #[arg(short = 's', long = "search")]
+    pub(crate) search: bool,
+    /// Установить все встроенные модули (platform, arch, os, python, rez, …)
+    #[arg(long = "quickstart")]
+    pub(crate) quickstart: bool,
+    /// Установить в release-репозиторий
+    #[arg(short = 'r', long = "release")]
+    pub(crate) release: bool,
+    /// Не биндить зависимости (для модулей с Python-стратегией)
+    #[arg(long = "no-deps")]
+    pub(crate) no_deps: bool,
+    /// Путь установки (по умолчанию: local_packages_path или release при -r)
+    #[arg(short = 'i', long = "install-path")]
+    pub(crate) install_path: Option<PathBuf>,
+    /// Имя модуля для bind или паттерн для --search
+    #[arg()]
+    pub(crate) package: Option<String>,
+}
+
 #[derive(Args, Debug, Clone)]
 pub(crate) struct RezStubArgs {
     /// Additional args passed to command (not implemented yet)
@@ -519,10 +545,25 @@ pub enum Commands {
         #[arg(long = "install-path")]
         install_path: Option<PathBuf>,
     },
-    /// rez pip
+    /// Импорт pip-пакета в репо (rez-pip)
+    #[command(long_about = "Импорт PyPI-пакета в репозиторий пакетов (как rez-pip).\n\n\
+Всё, что идёт после имени пакета, передаётся в `pip install` без изменений.\n\n\
+Примеры:\n\
+  pkg pip install appdirs -U\n\
+  pkg pip install appdirs --no-cache-dir --no-binary :all:\n\
+  pkg pip appdirs -i -- -U\n\n\
+Наши флаги: -i/--install, -r/--release, -p/--prefix, --python-version, -e/--extra.\n\
+Аргументы после -- тоже передаются в pip.")]
     Pip(PipArgs),
-    /// rez bind
-    Bind(RezStubArgs),
+    /// Привязка системного софта как пакетов (rez bind)
+    #[command(long_about = "Привязка системного софта в репозиторий пакетов.\n\n\
+Модули: platform, arch, os, python, rez, setuptools, pip (и из конфига).\n\
+  pkg bind --list          — список модулей\n\
+  pkg bind --search python — поиск по имени\n\
+  pkg bind python          — привязать модуль python\n\
+  pkg bind --quickstart    — привязать все встроенные\n\n\
+Флаги: -r/--release, --no-deps, -i/--install-path.")]
+    Bind(BindArgs),
     /// rez config
     Config(RezConfigArgs),
     /// rez context

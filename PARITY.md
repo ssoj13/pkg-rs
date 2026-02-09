@@ -4,23 +4,85 @@
 
 ---
 
+## Rez vs pkg-rs — сводка
+
+### CLI: команда за командой
+
+| Rez | pkg-rs | Статус |
+|-----|--------|--------|
+| rez-env | pkg env | ✅ Полный: resolve, rex (pre/commands/post), stamp, запуск команды после -- |
+| rez-build | pkg build | ✅ Полный: build systems (custom/make/cmake/cargo/python), pre_build_commands, install, --build-args и после -- |
+| rez-pip | pkg pip | ✅ Полный: install, -i/-r/-p, --python-version, **все аргументы после пакета → pip install** (как rez-pip -e) |
+| rez-bind | pkg bind | ✅ Полный: --list, --search, --quickstart, -r, --no-deps, -i, пакет; clap, справка; native модули (platform, arch, os, python, rez, setuptools, pip) |
+| rez-config | pkg config | ✅ Чтение конфига, --json, --search-list, --source-list, поле |
+| rez-context | pkg context | ✅ Создание/загрузка контекста, .rxt |
+| rez-status | pkg status | ✅ Статус контекста |
+| rez-suite | pkg suite | ✅ Список/создание сьютов |
+| rez-search | pkg search | ✅ Поиск пакетов, -t, -L, --json |
+| rez-view | pkg view | ✅ Просмотр пакета |
+| rez-depends | pkg depends | ✅ Граф зависимостей |
+| rez-diff | pkg diff | ✅ Сравнение контекстов |
+| rez-test | pkg test | ✅ pre_test_commands, tests, --list, --inplace |
+| rez-release | pkg release | ✅ Release в репо |
+| rez-cp | pkg cp | ✅ Копирование пакетов |
+| rez-mv / rez-rm | pkg mv, pkg rm | ✅ Перемещение/удаление |
+| rez-pkg-cache | pkg pkg-cache | ✅ Очистка/статистика кэша пакетов |
+| rez-pkg-ignore | pkg pkg-ignore | ✅ Игнор по паттернам |
+| rez-interpret | pkg interpret | ✅ Выполнение rex-кода |
+| rez-plugins | pkg plugins | ✅ Список плагинов (заглушка) |
+| rez-memcache | pkg memcache | ✅ Заглушка (clear/stats) |
+| rez-yaml2py | pkg yaml2py | ✅ Конвертация yaml → package.py |
+| rez-bundle | pkg bundle | ✅ Контекст в dir/zip, bin-patch |
+| rez-benchmark | pkg benchmark | ✅ Бенчмарк резолва |
+| rez-python | pkg python | ✅ REPL / запуск скрипта |
+| rez-help | pkg help | ✅ Справка |
+| rez-selftest | pkg selftest | ✅ Самотесты |
+| rez-gui | pkg gui | ✅ GUI (граф, solve, экспорт) |
+| shell (rez) | pkg shell | ✅ Интерактивная оболочка |
+
+Все команды нативные (без вызова Python Rez CLI). Неподдерживаемые флаги → ошибка.
+
+### Ядро: что без Python, что с Python
+
+| Компонент | Rez | pkg-rs | Зависимость от Python |
+|-----------|-----|--------|------------------------|
+| **Конфиг** | rezconfig.py + override | Нативный путь (YAML/JSON + REZ_*) без .py; при .py в цепочке — fallback на Python | Без Python при конфиге без .py |
+| **Резолвер** | Алгоритм Rez или плагины | Оба бэкенда (pkg, rez) = **PubGrub** + пакеты из Storage; фильтры/ордереры из конфига | **Нет** (rez.config / resolved_context не вызываются) |
+| **Loader (package.py)** | Выполнение package.py | Выполнение package.py (PyO3) | **Да** — нужен интерпретатор |
+| **Bind** | rez.package_bind или модули | Встроенные модули (platform, arch, os, python, rez, setuptools, pip) — **нативно**; имена из конфига — fallback rez.package_bind | Только для имён из bind_modules_extra |
+| **Rex (commands)** | rex в контексте | pre/commands/post через наш rex (py.run bootstrap) | Да (выполнение кода) |
+| **Build** | pre_build, build system | Аналогично; parse_build_args — Python при наличии скрипта | По необходимости |
+| **Pip** | rez-pip, packaging | pip install --target, dist-info, entry points; конфиг pip_extra_args, remaps | Для сложных требований — fallback packaging |
+
+### Что не сделано или частично
+
+- **Резолвер:** timestamp/patch locks, часть опций блокировок версий.
+- **Shell plugins:** формат env под bash/cmd/pwsh (цитирование, alias) — не как в Rez.
+- **Кэши:** resolve cache, memcache — только заглушки; pkg-cache есть.
+- **Build:** централизованный flow, build-env скрипты как в Rez; часть REZ_BUILD_*.
+- **Context/Suite:** полная семантика visibility (tool/suite visibility).
+- **Репозиторий:** trait + memory backend для тестов.
+- **Package:** filters/orderers из конфига — подключены к резолверу; расширенные варианты — по мере надобности.
+
+---
+
 ## Что сделано
 
 ### Ядро и окружение
 | Область | Статус | Детали |
 |--------|--------|--------|
-| Конфиг | ✅ | Загрузка rezconfig.py, REZ_CONFIG_FILE, ~/.rezconfig, REZ_* / REZ_*_JSON; package config section для build/release; rezplugins в дереве. |
+| Конфиг | ✅ | Нативный путь (дефолт + YAML/JSON + REZ_*) без Python; при .py — fallback. package config section для build/release. |
 | Package schema | ✅ | Поля name, version, reqs, deps, envs, apps, variants, pre_build/pre/post_commands, pre_test_commands, tests, package_source, plugin_for и др. |
-| Резолвер | ✅ | PubGrub (нативно) + Rez backend (Python); `plugins.pkg_rs.resolver_backend`. |
+| Резолвер | ✅ | PubGrub для обоих бэкендов (pkg и rez); фильтры/ордереры из конфига. **Без вызова Python.** |
 | Env | ✅ | Merge, compress, solve (токены), stamp (PKG_*), commit; pre_commands / commands / post_commands при `pkg env` через rex (src/rex.rs). |
 | Тесты пакетов | ✅ | pre_test_commands через rex; секция tests (command, requires, run_on); --list, --inplace; наш и Rez .rxt для inplace. |
 
 ### CLI — все команды нативные
 | Группа | Команды |
 |--------|---------|
-| Env/build/pip | env, build, build-env, pip |
+| Env/build/pip | env, build, build-env, pip (полный синтаксис rez-pip: аргументы после пакета → pip) |
 | Конфиг и контекст | config, context, status, suite |
-| Bind | bind (модульный регистр: native platform/arch/os + python; extra/remove через конфиг) |
+| Bind | bind на clap (BindArgs): -l/-s, --quickstart, -r, --no-deps, -i; native модули (platform, arch, os, python, rez, setuptools, pip) |
 | Поиск и граф | search, view, depends, diff |
 | Репозиторий | cp, mv, rm, release, pkg-ignore, pkg-cache |
 | Тесты и rex | test, interpret |
@@ -32,7 +94,7 @@
 | Область | Статус |
 |--------|--------|
 | Build | ✅ Загрузка package.py, варианты, build context, pre_build_commands, выбор build system (custom/make/cmake/cargo/python), установка в репо; --build-args/--child-build-args с `-`; MSVC env (Windows). |
-| Pip | ✅ Поиск python/pip, pip install --target, метаданные и entry points, копирование в layout, генерация package.py; санитизация путей (Windows). |
+| Pip | ✅ Синтаксис rez-pip: -i, -r, -p, --python-version, пакет; всё после пакета пробрасывается в pip install. Import в репо, entry points, санитизация путей (Windows). |
 | Bundle | ✅ Контекст в dir/zip, bin-patch (ELF/Mach-O). |
 
 ### Прочее
@@ -79,11 +141,12 @@
 |-----------|--------|--------|
 | Конфиг | Загрузка + override | ~85% |
 | Package schema | Поля + команды в runtime | ~90% |
-| Резолвер | PubGrub + Rez backend | ~80% (нет filters/orderers/locks) |
+| Резолвер | Оба бэкенда = PubGrub, filters/orderers | ~85% (нет timestamp/patch locks) |
 | Env + rex | pre/commands/post + stamp/solve | ~95% |
-| CLI команды | Все нативные, без passthrough | 100% по покрытию команд |
+| CLI команды | Все нативные, pip/bind полный синтаксис | 100% по покрытию, parity флагов |
 | Build | Локальный build, системы сборки | ~75% (нет central, часть REZ_BUILD_*) |
-| Pip | Import в репо, entry points | ~80% |
+| Pip | Полный синтаксис rez-pip, import в репо | ~85% |
+| Bind | clap, native модули (7 шт.), справка | ~90% |
 | Context/Suite | .rxt, status, suite list/create | ~70% (нет полной семантики visibility) |
 | Тесты пакетов | pre_test + tests, inplace | ~90% |
 | Caching | pkg-cache (clear), нет resolve/memcache | ~30% |
