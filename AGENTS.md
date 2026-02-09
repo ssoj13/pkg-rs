@@ -297,63 +297,38 @@ Resolved env -> pre_test_commands (rex, merge) -> re-solve -> run test entries -
 pkg binary
   |
   v
-subcommands
+subcommands (all native; no rez passthrough)
   |
-  +-- env (pkg rez env) ----> cmd_env
-  +-- build (pkg rez build) -> cmd_build
-  +-- pip (pkg rez pip) ----> cmd_pip
-  +-- rez <cmd> (unimplemented) -> stub error + parity TODO
+  +-- env      -> cmd_env (commands/env.rs)
+  +-- build    -> cmd_build
+  +-- pip      -> cmd_pip
+  +-- search   -> cmd_rez_search (list/search packages)
+  +-- view     -> cmd_rez_view (package details)
+  +-- depends  -> cmd_rez_depends (dep graph: list/dot/mermaid)
+  +-- bind     -> cmd_rez_bind (BindArgs, clap)
+  +-- test, config, context, status, suite, cp, mv, rm, release, diff, ...
 ```
 
 ### 0.4 Rez: все команды нативные
 
 Делегирование в Python Rez CLI (passthrough) удалено. **bind**, **context**, **status**, **suite** обрабатываются только в Rust; неподдерживаемые флаги/аргументы приводят к ошибке (eprintln + ExitCode::FAILURE).
 
-### 0.5 Rez bind — что делает сейчас (ASCII)
+### 0.5 Bind (pkg bind) — clap BindArgs
 
 ```
-User: pkg rez bind [args]
+User: pkg bind [args]
   |
   v
-parse_bind_args(args)
+Cli::parse() -> Commands::Bind(BindArgs)
   |
-  +-- --list / -l     -> list = true
-  +-- --search / -s   -> search = true
-  +-- --quickstart    -> quickstart = true
-  +-- --release / -r  -> release = true
-  +-- --no-deps       -> no_deps = true
-  +-- --install-path / -i <path> -> install_path
-  +-- первый не-флаг  -> pkg = "name"
-  +-- остальное       -> unknown[]
+  -l/--list, -s/--search, --quickstart, -r/--release, --no-deps, -i/--install-path, [package]
   v
-```
-
-**Ветвление:**
-
-```
-list ?     --> cmd_bind_list()   (печать известных имён: platform, arch, os, python, rez, …)
-search ?   --> cmd_bind_search() (фильтр по паттерну из pkg)
+cmd_rez_bind(&BindArgs)
   |
-  NO
-  v
-quickstart ?
-  |
-  NO --> unknown.is_empty() && pkg == Some("platform"|"arch"|"os") ?
-  |         |
-  |         YES --> try_native_bind(pkg, args)
-  |         |
-  |         NO --> eprintln "binding 'X' is not implemented" | "unsupported arguments" → FAILURE
-  |
-  YES --> cmd_quickstart(parsed)
-              |
-              +-- install_path: -i | release_packages_path | local_packages_path
-              +-- ensure_rez_on_sys_path, ensure_python_executable
-              +-- Python: rez.package_bind.bind_package(name, path=..., no_deps=True)
-              |     для каждого: platform, arch, os, python, rez, rezgui, setuptools, pip
-              |     (пропуск если уже есть в install_path)
-              +-- _print_package_list(installed_variants)
-              v
-           ExitCode
+  list ?     -> print registered modules (native + config extra − remove)
+  search ?   -> filter by pattern
+  quickstart -> bind all from registry (skip existing)
+  else       -> bind_one(package): builtin in Rust; extra names -> rez.package_bind
 ```
 
 **Итог по bind:**
@@ -361,10 +336,10 @@ quickstart ?
 
 | Вызов | Обработка |
 |-------|-----------|
-| `rez bind --list` | Регистр модулей (native + python), теги [native]/[python]; конфиг: bind_modules_extra / bind_modules_remove |
-| `rez bind --search [pattern]` | Поиск по имени в регистре |
-| `rez bind <name>` | bind_module::bind_one: встроенные модули — Rust (platform, arch, os, python, rez, setuptools, pip); имена из config extra — rez.package_bind; неизвестное имя → ошибка со списком доступных |
-| `rez bind --quickstart` | По регистру: встроенные — bind_one по одному; из config extra — run_python_bind_batch; уже установленные пропускаются |
+| `pkg bind --list` | Регистр модулей (native + python), теги [native]/[python]; конфиг: bind_modules_extra / bind_modules_remove |
+| `pkg bind --search [pattern]` | Поиск по имени в регистре |
+| `pkg bind <name>` | bind_module::bind_one: встроенные — Rust (platform, arch, os, python, rez, setuptools, pip); имена из config extra — rez.package_bind |
+| `pkg bind --quickstart` | По регистру: встроенные — bind_one; extra — run_python_bind_batch; уже установленные пропускаются |
 
 ### 1. Package Discovery Flow
 
@@ -837,13 +812,20 @@ pkg_lib (lib.rs)
 
 | Command | Handler | Description |
 |---------|---------|-------------|
-| `pkg list` | `commands/list.rs` | List packages |
-| `pkg info <pkg>` | `commands/info.rs` | Package details |
-| `pkg env <pkg>` | `commands/env.rs` | Environment and launch |
-| `pkg graph <pkg>` | `commands/graph.rs` | Dep graph |
-| `pkg scan` | `commands/scan.rs` | Scan locations |
+| `pkg search` | `commands/rez_search.rs` | List/search packages (patterns, -t tag, -L latest, --json) |
+| `pkg view <pkg>` | `commands/rez_view.rs` | Package details |
+| `pkg env <pkg>` | `commands/env.rs` | Environment and launch (rex, stamp, -- cmd) |
+| `pkg depends <pkg>` | `commands/rez_depends.rs` | Dep graph (format: list/dot/mermaid, -R reverse) |
+| `pkg build` | `commands/build.rs` | Build package (current dir) |
+| `pkg pip` | `commands/pip.rs` | Import pip package into repo |
+| `pkg bind` | `commands/rez_bind.rs` | Bind modules (clap BindArgs: -l, -s, --quickstart, -r, -i) |
 | `pkg test <pkg>` | `commands/rez_test.rs` | Run package tests (pre_test_commands + tests section) |
-| `pkg shell` | `shell.rs` | Interactive mode |
+| `pkg config` | `commands/rez_config.rs` | Config paths and values |
+| `pkg context` | `commands/rez_context.rs` | .rxt create/load |
+| `pkg status` | `commands/rez_status.rs` | Version, context, suites |
+| `pkg suite` | `commands/rez_suite.rs` | Suites list/create |
+| `pkg shell` | `shell/mod.rs` | Interactive mode |
+| `pkg gui` | (eframe) | Node editor GUI |
 
 ### Python boundary and port-to-Rust
 

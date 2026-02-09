@@ -7,7 +7,7 @@ Options available for all commands.
 Add package repository path. Can be repeated.
 
 ```powershell
-pkg -r ./repo1 -r ./repo2 list
+pkg -r ./repo1 -r ./repo2 search
 ```
 
 ## -v (verbosity)
@@ -26,8 +26,8 @@ Control log verbosity.
 Log to file.
 
 ```powershell
-pkg -l list              # Default: pkg.log
-pkg -l mylog.txt list    # Custom path
+pkg -l search              # Default: pkg.log
+pkg -l mylog.txt search    # Custom path
 ```
 
 ## -x, --exclude
@@ -35,8 +35,8 @@ pkg -l mylog.txt list    # Custom path
 Exclude packages by pattern.
 
 ```powershell
-pkg -x "test-*" list     # Exclude test packages
-pkg -x old -x legacy list
+pkg -x "test-*" search     # Exclude test packages
+pkg -x old -x legacy search
 ```
 
 ## -u, --user-packages
@@ -44,7 +44,7 @@ pkg -x old -x legacy list
 Include user packages from `~/packages` (home directory).
 
 ```powershell
-pkg -u list
+pkg -u search
 ```
 
 ## --json
@@ -52,7 +52,7 @@ pkg -u list
 JSON output (where supported).
 
 ```powershell
-pkg list --json
-pkg info maya --json
+pkg search --json
+pkg view maya --json
 pkg env maya --json -n
 ```

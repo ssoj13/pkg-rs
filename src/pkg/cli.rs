@@ -8,6 +8,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(name = "pkg")]
 #[command(author, version)]
+#[command(disable_help_subcommand = true)] // we have our own Help subcommand (rez help)
 #[command(help_template = "{about-section}\n{usage-heading} {usage}\n\n{all-args}\n\n{after-help}")]
 #[command(about = "pkg - Software package manager for VFX pipelines.\n\n\
     Manages packages with Python-based definitions (package.py),\n\

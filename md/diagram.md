@@ -87,7 +87,7 @@ Stamp PKG_* -> Env.solve_impl
 Emit/commit env
   |
   v
-NOTE: pre/commands/post/pre_test are not executed.
+pre_commands, commands, post_commands are executed (rex); pre_test_commands + tests at pkg test.
 ```
 
 ## Env Pipeline (Target Rez Parity)

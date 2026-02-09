@@ -1,11 +1,13 @@
 //! Integration tests for pkg.
 //!
 //! Uses tempdir to create isolated test repositories.
+//! Lib tests: Storage, Solver, rex, test section. CLI tests: run `pkg` binary against temp repo.
 
 use pkg_lib::rex::{apply_package_commands, package_root_from_source, packages_in_rex_order};
 use pkg_lib::{Solver, Storage};
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 use tempfile::TempDir;
 
 /// Create a package.py file in the given directory.
@@ -612,4 +614,63 @@ def get_package():
     let storage = Storage::scan_impl(Some(&[dir.path().to_path_buf()])).unwrap();
     let pkg = storage.get("testpkg-1.0.0").unwrap();
     assert!(pkg.pre_test_commands.is_some());
+}
+
+// =============================================================================
+// CLI integration: run `pkg` binary against temp repo
+// =============================================================================
+
+/// Run `pkg -r <repo> search` and assert packages appear in stdout.
+#[test]
+fn test_cli_search_lists_packages() {
+    let repo = create_test_repo(&[
+        ("maya", "2024.0.0", &[]),
+        ("houdini", "20.0.0", &[]),
+    ]);
+
+    let exe = env!("CARGO_BIN_EXE_pkg");
+    let out = Command::new(exe)
+        .arg("-r")
+        .arg(repo.path())
+        .arg("search")
+        .output()
+        .expect("run pkg search");
+
+    assert!(out.status.success(), "pkg search failed: {:?}", out);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("maya"), "stdout should list maya: {}", stdout);
+    assert!(stdout.contains("houdini"), "stdout should list houdini: {}", stdout);
+}
+
+/// Run `pkg -r <repo> env maya` and assert success and env output (cross-platform; no child command).
+#[test]
+fn test_cli_env_prints_env() {
+    let dir = TempDir::new().unwrap();
+    create_package_custom(
+        dir.path(),
+        "maya",
+        "2024.0.0",
+        r#"from pkg import Package, Env, Evar
+def get_package():
+    p = Package("maya", "2024.0.0")
+    e = Env("default")
+    e.add(Evar("MAYA_TEST", "ok", "set"))
+    p.add_env(e)
+    return p
+"#,
+    );
+
+    let exe = env!("CARGO_BIN_EXE_pkg");
+    let out = Command::new(exe)
+        .arg("-r")
+        .arg(dir.path())
+        .arg("env")
+        .arg("maya")
+        .output()
+        .expect("run pkg env maya");
+
+    assert!(out.status.success(), "pkg env maya failed: {:?}", out);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("MAYA_TEST"), "stdout should contain MAYA_TEST: {}", stdout);
+    assert!(stdout.contains("ok"), "stdout should contain env value: {}", stdout);
 }

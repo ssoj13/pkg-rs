@@ -28,7 +28,7 @@ flowchart LR
     CMD --> ENV[pkg env]
     CMD --> BUILD[pkg build]
     CMD --> PIP[pkg pip]
-    CMD --> LIST[pkg list/info/scan]
+    CMD --> SEARCH[pkg search/view]
     CMD --> CTX[pkg context/suite/status]
 
     ENV --> RESOLVE[Resolver]

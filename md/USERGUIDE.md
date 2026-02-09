@@ -11,14 +11,11 @@ environment to launch tools. Python is used only to author and execute
 # 1) Point pkg to your repo
 $env:REZ_PACKAGES_PATH="D:\packages;D:\tools"
 
-# 2) Scan repositories
-pkg scan
+# 2) Scan repositories (optional; list/search will scan on demand)
+pkg search -L
 
-# 3) List packages
-pkg list -L
-
-# 4) Inspect a package
-pkg info maya
+# 3) Inspect a package
+pkg view maya
 
 # 5) Build env and launch tool
 pkg env maya -- "C:\Program Files\Autodesk\Maya2024\bin\maya.exe"
@@ -57,9 +54,43 @@ Config reference (under `plugins.pkg_rs`): `resolver_backend` (`"pkg"` | `"rez"`
 
 When using the **pkg** (PubGrub) resolver, Rez-style `package_filter` and `package_orderers` from config are applied if the builtin plugin is enabled (`plugins.pkg_rs.package_filters` / `plugins.pkg_rs.package_orderers` list includes `builtin` or `*`). These control which package versions are considered and their preference order during resolution.
 
+### Config examples (rezconfig.py)
+
+**Resolver and bind:**
+
+```python
+plugins = {
+    "pkg_rs": {
+        "resolver_backend": "pkg",   # or "rez" (both use PubGrub)
+        "package_filters": ["builtin"],
+        "package_orderers": ["builtin"],
+        "bind_modules_extra": [],    # extra bind module names
+        "bind_modules_remove": ["rezgui"],
+    }
+}
+```
+
+**Package filter** (exclude/include rules; applied when `package_filters` includes `builtin`). Each rule is a string: `glob(pattern)`, `regex(pattern)`, `range(spec)`, `before(timestamp)`, `after(timestamp)`. Optional family: `glob(maya*)(maya)`.
+
+```python
+package_filter = [
+    {"exclude": ["glob(*-dev*)", "before(1700000000)"], "include": []},
+    {"exclude": [], "include": ["range(python@>=3.9)"]},
+]
+```
+
+**Package orderers** (prefer versions by type; applied when `package_orderers` includes `builtin`). Types: `no_order`, `sorted` (optional `descending`: true), `version_split` (needs `first_version`), `soft_timestamp` (needs `timestamp`, optional `rank`), `per_family` (needs `orderers` list).
+
+```python
+package_orderers = [
+    {"type": "sorted", "descending": True, "packages": ["*"]},
+    {"type": "soft_timestamp", "timestamp": 1700000000, "rank": 0, "packages": ["python"]},
+]
+```
+
 ## Locations and Repositories
 
-pkg scans for `package.py` under repositories. Priority order:
+pkg loads packages by scanning for `package.py` under repositories. Priority order:
 
 1. `--repo` flags:
 
@@ -77,30 +108,30 @@ You can also add a personal repo with `--user-packages` (maps to `~/.pkg-rs/pack
 pkg --user-packages list
 ```
 
-## Scanning
+## Loading packages
+
+Packages are loaded from repositories when you run any command that needs them
+(search, env, view, build, etc.). Use `pkg search` to list packages and confirm
+paths; you can pass repos via `-r` or set `REZ_PACKAGES_PATH` / `packages_path` in config.
 
 ```powershell
-pkg scan
-pkg scan D:\packages \\server\repo
+pkg search
+pkg -r D:\packages -r \\server\repo search
 ```
-
-`scan` builds the in-memory registry and cache. Use it to validate paths and
-diagnose missing packages before running real commands.
 
 ## Finding Packages
 
 ```powershell
-pkg list                # all packages
-pkg list -L             # only latest versions
-pkg list maya*          # glob patterns
-pkg list -t dcc         # filter by tags
-pkg info maya           # latest version details
-pkg info maya-2024.0.0  # exact version
-pkg info maya --json    # machine-readable output
+pkg search                # all packages
+pkg search -L             # only latest versions
+pkg search maya*          # glob patterns
+pkg search -t dcc         # filter by tags
+pkg view maya              # latest version details (rez view)
+pkg view maya-2024.0.0     # exact version
+pkg view maya --json       # machine-readable output
 ```
 
-Why `list` first: it shows what is actually installed and how names are
-spelled, which avoids resolution errors later.
+Use `pkg search` first to see what is installed and how names are spelled; that avoids resolution errors later.
 
 ## Environments and Running Software
 
@@ -202,13 +233,14 @@ Install targets use config when available:
 - `release_packages_path` for `--process central`
 - fallback to `--prefix` or other scan roots
 
-## Dependency Graph
+## Dependency graph
 
 ```powershell
-pkg graph maya               # Graphviz DOT
-pkg graph maya -f mermaid    # Mermaid
-pkg graph maya -d 2          # limit depth
-pkg graph maya -R            # reverse dependencies
+pkg depends maya               # list format (default)
+pkg depends maya -f dot        # Graphviz DOT
+pkg depends maya -f mermaid    # Mermaid
+pkg depends maya -d 2          # limit depth
+pkg depends maya -R            # reverse dependencies
 ```
 
 Why use it: it shows why a package pulls in other tools and helps explain
@@ -258,18 +290,17 @@ pkg completions zsh >> ~/.zshrc
 pkg completions fish > ~/.config/fish/completions/pkg.fish
 ```
 
-## Generate Test Repositories
+## Other commands
 
-```powershell
-pkg gen-repo                 # default: medium
-pkg gen-repo --small
-pkg gen-repo --large
-pkg gen-repo --stress
-pkg gen-repo -n 100 -V 5     # custom size
-pkg gen-repo -o ./my-repo
-```
-
-Why use it: stress‑test scanning/solving or demo the tool without real DCCs.
+- `pkg config` — show config (paths, keys, `--json`, `--search-list`, `--source-list`).
+- `pkg context` — create/load .rxt context.
+- `pkg status` — version, active context, visible suites.
+- `pkg suite --list` / `pkg suite --create DIR` — suite management.
+- `pkg cp` / `pkg mv` / `pkg rm` — copy, move, remove packages.
+- `pkg release` — release package to repo.
+- `pkg diff` — compare contexts.
+- `pkg interpret` — run rex code.
+- `pkg completions <shell>` — shell completions.
 
 ## Writing `package.py`
 
@@ -358,8 +389,8 @@ pkg -x maya*      # exclude pattern (repeatable)
 
 ## Troubleshooting
 
-- "Package not found": verify paths (`REZ_PACKAGES_PATH`/`packages_path`, `--repo`) and re-run `pkg scan`.
+- "Package not found": verify paths (`REZ_PACKAGES_PATH`/`packages_path`, `--repo`) and run `pkg search` to confirm packages load.
 - "Environment not found": the package has no `Env` named `default` (set `--env-name`).
-- "Failed to solve dependencies": run `pkg graph` to see conflicts; check your
+- "Failed to solve dependencies": run `pkg depends` to see conflicts; check your
   version constraints in `package.py`.
 - "No executable path": the `App` entry has no `path`.

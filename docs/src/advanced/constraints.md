@@ -59,5 +59,5 @@ When multiple versions match, the solver prefers:
 pkg env "maya@>=2024" "redshift@3" -n
 
 # Check what version resolves
-pkg info maya@2024
+pkg view maya@2024
 ```

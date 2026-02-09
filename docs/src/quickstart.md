@@ -4,13 +4,13 @@
 
 ```powershell
 # List all packages
-pkg list
+pkg search
 
 # List latest versions only
-pkg list -L
+pkg search -L
 
-# Show package info
-pkg info maya
+# Show package details
+pkg view maya
 
 # Print environment
 pkg env maya -s
@@ -52,11 +52,11 @@ def get_package():
     return pkg
 ```
 
-3. Scan and use:
+3. Use with your repo:
 
 ```powershell
-pkg -r ./mypackages list
-pkg -r ./mypackages info mytool
+pkg -r ./mypackages search
+pkg -r ./mypackages view mytool
 pkg -r ./mypackages env mytool -- mytool.exe
 ```
 

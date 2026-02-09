@@ -10,9 +10,9 @@
 
 | Rez Command | Status | Notes |
 |---|---|---|
-| `rez env` | Native | Implemented via `pkg env`/`pkg rez env` (Rust). |
-| `rez build` | Native | Implemented via `pkg build`/`pkg rez build` (Rust). |
-| `rez pip` | Native | Implemented via `pkg pip`/`pkg rez pip` (Rust). |
+| `rez env` | Native | `pkg env` (Rust). |
+| `rez build` | Native | `pkg build` (Rust). |
+| `rez pip` | Native | `pkg pip` (Rust). |
 | `rez bind` | Partial | Rust quickstart/native subset + fallback to Python. |
 | `rez config` | Partial | Rust config reader and output; supports `--search-list`, `--source-list`, `--json`, `field`. |
 | `rez context` | Partial | Rust subset (`--req/--res/--pg/--wg/--format/--which`), falls back for advanced flags. |

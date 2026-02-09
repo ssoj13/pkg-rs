@@ -38,7 +38,7 @@
 
 | Команда | Статус | Описание |
 |---------|--------|----------|
-| **bind** | Native | Регистр: Native (platform, arch, os) + Python (python, rez, rezgui, setuptools, pip). Конфиг: `bind_modules_extra` / `bind_modules_remove`. --list / --search / &lt;name&gt; / --quickstart. |
+| **bind** | Native | Регистр: Native (platform, arch, os, python, rez, setuptools, pip) + config extra. Конфиг: `bind_modules_extra` / `bind_modules_remove`. Clap: -l, -s, --quickstart, -r, -i, &lt;name&gt;. |
 
 ### 2.4 Поиск, граф, репозиторий
 
@@ -85,23 +85,22 @@
 
 ---
 
-## 5. Python каталог — что можно прибить
+## 5. Python каталог — когда нужен
 
-Используется из Rust:
+**Встроенные bind-модули** (platform, arch, os, python, rez, setuptools, pip) реализованы в Rust; для них **python/ не нужен**.
 
-- **rez.config** — загрузка конфига (Config, _replace_config).
-- **rez.package_bind** — bind для стратегии Python (bind_package, _print_package_list).
-- **rez.resolved_context** — резолвер Rez (ResolvedContext).
-- **rezplugins** — директория должна существовать (ensure_rez_on_sys_path); конфиг тянет плагины.
+**python/ обязателен только если** в конфиге задан `bind_modules_extra`: тогда при bind такого имени вызывается `rez.package_bind` (Python). В остальных случаях bind не трогает Python.
 
-**Удалено:**
+**Loader и pkg python:** вызов `ensure_rez_on_sys_path` сделан мягким (ошибка игнорируется). Без каталога python/ загрузка package.py и `pkg python` работают; если в package.py есть `import rez`, пользователь может добавить путь к rez в PYTHONPATH сам.
 
-| Каталог | Причина |
-|---------|--------|
-| **python/rez/tests/** | Тесты Rez не запускаются из pkg-rs; свой selftest в Rust. ✅ |
-| **python/rezgui/** | Не используем; убран из списка bind-модулей. ✅ |
+| Что | Когда нужен python/ |
+|-----|----------------------|
+| Загрузка package.py, `pkg python` | Нет (rez в path опционально). |
+| `pkg bind` встроенные модули | Нет. |
+| `pkg bind <имя из bind_modules_extra>` | Да (нужны python/rez/, python/rezplugins/). |
+| CMake build system (Rez-шаблоны) | Если есть python/rezplugins/build_system/cmake_files. |
 
-**Оставлять:** `python/rez/` (без tests), `python/rezplugins/`, `python/pkg.pyi`. Удаление `rez/cli` ломает часть bind-модулей (импорт _main). Удаление `rez/data` может сломать config/system.
+**Вывод: каталог python/ можно не класть** при сборке/распространении, если не используете bind_modules_extra и не нужны Rez CMake-модули. Для bind extra по-прежнему нужны `python/rez/` и `python/rezplugins/`.
 
 ---
 

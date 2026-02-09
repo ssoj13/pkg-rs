@@ -348,10 +348,8 @@ impl Loader {
             // Create execution globals with injected classes
             trace!("Loader: creating Python globals");
             let globals = self.create_globals(py, path)?;
-            crate::py::ensure_rez_on_sys_path(py).map_err(|e| LoaderError::ExecutionError {
-                path: path.to_path_buf(),
-                reason: format!("Failed to set rez python path: {e}"),
-            })?;
+            // Rez on path only if python/ exists (for package.py that "import rez"); not required for pkg API
+            let _ = crate::py::ensure_rez_on_sys_path(py);
 
             // Execute the code using CString
             let code_cstr = CString::new(code.as_bytes()).map_err(|e| {

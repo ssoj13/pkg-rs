@@ -20,19 +20,20 @@ Package manager for VFX/DCC pipelines: Rez-compatible CLI, dependency resolution
 
 ```powershell
 # List and resolve
-pkg list
-pkg info maya
+pkg search
+pkg search -L
+pkg view maya
 pkg env maya
 pkg env maya -- maya.exe
 pkg env maya -o env.ps1
 
-# Bind (module registry: platform, arch, os, python, rez, …)
-pkg rez bind --list
-pkg rez bind platform
-pkg rez bind --quickstart
+# Bind (module registry: platform, arch, os, python, rez, setuptools, pip)
+pkg bind --list
+pkg bind platform
+pkg bind --quickstart
 
 # Test package
-pkg rez test mypkg
+pkg test mypkg
 ```
 
 Package roots: Rez config (`rezconfig.py`, `REZ_PACKAGES_PATH`, `~/.rezconfig`). Fallback: `./repo`.
@@ -58,8 +59,8 @@ From source:
 
 Bind turns system software into Rez packages. The set of bindable names is a **module registry** you can extend or trim.
 
-- **Native (Rust):** `platform`, `arch`, `os` — detect version, write `package.py` into local/release repo.
-- **Python:** `python`, `rez`, `rezgui`, `setuptools`, `pip` — call `rez.package_bind.bind_package(name)`.
+- **Native (Rust):** `platform`, `arch`, `os`, `python`, `rez`, `setuptools`, `pip` — detect/install, write `package.py` into local/release repo.
+- **Extra (config):** names in `bind_modules_extra` use `rez.package_bind` (Python) if not in builtin set.
 
 **Add modules** (all use Python strategy): in your Rez config (e.g. `~/.rezconfig` or file from `REZ_CONFIG_FILE`):
 
@@ -74,10 +75,10 @@ plugins = {
 
 **Remove modules:** list names in `bind_modules_remove`; they disappear from `--list` and cannot be bound.
 
-- `pkg rez bind --list` — all registered modules with `[native]` / `[python]`.
-- `pkg rez bind --search [pattern]` — filter by name.
-- `pkg rez bind <name>` — bind one (from registry).
-- `pkg rez bind --quickstart` — bind all from registry (skip already installed).
+- `pkg bind --list` — all registered modules with `[native]` / `[python]`.
+- `pkg bind --search [pattern]` — filter by name.
+- `pkg bind <name>` — bind one (from registry).
+- `pkg bind --quickstart` — bind all from registry (skip already installed).
 
 ---
 
@@ -97,25 +98,25 @@ Rez-style layering: `rezconfig.py` → `REZ_CONFIG_FILE` → `~/.rezconfig` → 
 
 | Command | Description |
 |---------|-------------|
-| `pkg list` | List packages (`-L` latest only) |
-| `pkg info <pkg>` | Package details |
+| `pkg search` | List/search packages (patterns, `-t` tag, `-L` latest, `--json`) |
+| `pkg view <pkg>` | Package details (`--json`) |
 | `pkg env <pkg>` | Env (pre/commands/post run); `-o` export; `-- cmd` run |
-| `pkg graph <pkg>` | Dependency graph (DOT/Mermaid) |
-| `pkg scan` | Rescan locations |
-| `pkg shell` | Interactive shell |
-| `pkg rez bind` | Bind modules (--list, --search, &lt;name&gt;, --quickstart) |
-| `pkg rez context` | .rxt: --print-request, --print-resolve, --format, --which, … |
-| `pkg rez status` | Rez version, active context, visible suites |
-| `pkg rez suite` | Suites: --list, --create, DIR |
-| `pkg rez test <pkg>` | Run pre_test_commands + tests section |
+| `pkg depends <pkg>` | Dependency graph (`-f` dot/mermaid/list, `-R` reverse, `-d` depth) |
+| `pkg shell` | Interactive shell (`pkg sh`) |
+| `pkg bind` | Bind modules (`--list`, `--search`, `<name>`, `--quickstart`, `-r`, `-i`) |
+| `pkg context` | .rxt: --print-request, --print-resolve, --format, --which |
+| `pkg status` | Version, active context, visible suites |
+| `pkg suite` | Suites: --list, --create, DIR |
+| `pkg test <pkg>` | Run pre_test_commands + tests section |
 | `pkg build` | Build package (current dir package.py) |
-| `pkg pip` | Import pip package into repo |
-| `pkg rez search` | Search packages (patterns, tags, --latest) |
-| `pkg rez view <pkg>` | Package details |
-| `pkg rez depends` | Dependency graph (list/dot/mermaid) |
-| `pkg rez config` | Config paths and values |
+| `pkg pip` | Import pip package into repo (args after pkg → pip install) |
+| `pkg config` | Config paths and values |
+| `pkg cp` / `pkg mv` / `pkg rm` | Copy, move, remove packages |
+| `pkg release` | Release package to repo |
+| `pkg diff` | Compare contexts |
 | `pkg gui` | Node editor GUI (graph, solve, export env) |
 | `pkg version` | Version and build info |
+| `pkg completions <shell>` | Shell completions |
 
 Full status and per-command behaviour: [PLAN.md](PLAN.md) (§2).
 

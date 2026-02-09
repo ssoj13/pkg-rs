@@ -13,9 +13,8 @@ pub fn cmd_python(script: Option<PathBuf>, args: Vec<String>, verbose: bool) -> 
     let _ = pyo3::Python::initialize();
 
     Python::attach(|py| {
-        if let Err(err) = pkg_lib::py::ensure_rez_on_sys_path(py) {
-            eprintln!("Failed to set rez python path: {}", err);
-        }
+        // Rez on path if python/ present (optional; user can set PYTHONPATH)
+        let _ = pkg_lib::py::ensure_rez_on_sys_path(py);
         // Create globals with injected pkg classes
         let globals = PyDict::new(py);
 

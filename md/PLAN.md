@@ -179,7 +179,7 @@ Deliverable: feature parity where it adds value.
 | ISS-004 | Local build process | Implement local build process with per-variant build dirs, env export, logs, and `build.rxt` snapshot. | Each variant produces an isolated build directory and a saved build context file. |
 | ISS-005 | Build env parity | Export Rez-compatible build env vars (REZ_BUILD_*) with variant-aware values. | Build scripts can read the same env vars as Rez. |
 | ISS-006 | Build scripts mode | Implement `--scripts` to generate build environment scripts without running the build system. | Generated scripts reproduce the build env and can be executed manually. |
-| ISS-007 | Install pipeline | Copy payload into repo path and write package metadata (including variant ids). | Installed package is discoverable by `pkg list` and resolves in `pkg env`. |
+| ISS-007 | Install pipeline | Copy payload into repo path and write package metadata (including variant ids). | Installed package is discoverable by `pkg search` and resolves in `pkg env`. |
 | ISS-008 | Build system: make | Implement make plugin that honors REZ_BUILD_THREAD_COUNT and install path. | `pkg build` succeeds for a simple Makefile package. |
 | ISS-009 | Build system: cmake | Implement cmake plugin with configure, build, install phases. | `pkg build` succeeds for a simple CMake package. |
 | ISS-010 | Pip discovery | Implement pip discovery order with python/pip packages or system fallback. | `pkg pip` can run without manual pip path configuration. |

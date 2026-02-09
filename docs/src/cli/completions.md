@@ -46,6 +46,6 @@ pkg completions elvish >> ~/.elvish/rc.elv
 
 ## What Gets Completed
 
-- Command names (`list`, `info`, `solve`, etc.)
-- Package names (after `info`, `solve`, `env`, `run`)
+- Command names (`search`, `view`, `env`, `depends`, etc.)
+- Package names (after `view`, `env`, `depends`, `test`)
 - Option flags (`--json`, `--dry-run`, etc.)

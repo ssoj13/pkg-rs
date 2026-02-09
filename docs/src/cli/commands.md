@@ -1,38 +1,41 @@
 # Commands
 
-## list
+All subcommands use the single `pkg` binary. Run `pkg --help` and `pkg <command> --help` for options.
 
-List available packages.
+## search
+
+List or search packages.
 
 ```powershell
-pkg list              # All packages
-pkg list -L           # Latest versions only
-pkg list -n maya      # Filter by name
-pkg list -t dcc       # Filter by tag
-pkg list --json       # JSON output
+pkg search                # All packages
+pkg search -L              # Latest versions only
+pkg search maya*           # Glob patterns
+pkg search -t dcc          # Filter by tag
+pkg search --json          # JSON output
 ```
 
-## info
+## view
 
-Show package details.
+Show package details (Rez: rez-view).
 
 ```powershell
-pkg info maya             # Latest version
-pkg info maya-2024.0.0    # Specific version
-pkg info maya --json      # JSON output
+pkg view maya              # Latest version
+pkg view maya-2024.0.0     # Specific version
+pkg view maya --json       # JSON output
 ```
 
 ## env
 
-Print environment variables for package(s).
+Print environment variables for package(s) or run a command with that environment.
 
 ```powershell
-pkg env maya              # Print env (tokens expanded by default)
-pkg env maya -e false     # Without token expansion
-pkg env maya -s           # Include PKG_* stamp variables
-pkg env maya -f json      # JSON format
-pkg env maya -o env.ps1   # Export to file
+pkg env maya               # Print env (tokens expanded by default)
+pkg env maya -e false      # Without token expansion
+pkg env maya -s            # Include PKG_* stamp variables
+pkg env maya -f json       # JSON format
+pkg env maya -o env.ps1    # Export to file
 pkg env maya bifrost arnold  # Multiple packages (toolset)
+pkg env maya -- maya.exe   # Run command with env
 ```
 
 **Options:**
@@ -42,27 +45,95 @@ pkg env maya bifrost arnold  # Multiple packages (toolset)
 - `-o, --output` - Write to file
 - `-n, --dry-run` - Preview what would be set
 
-**PATH Order:** Direct requirements appear first (in request order), then transitive dependencies.
+**PATH order:** Direct requirements first (in request order), then transitive dependencies.
 
-## graph
+## depends
 
-Visualize dependency graph.
-
-```powershell
-pkg graph maya                # DOT format
-pkg graph maya -f mermaid     # Mermaid format
-pkg graph maya -R             # Reverse deps
-pkg graph maya -d 2           # Limit depth
-```
-
-## scan
-
-Scan locations and show statistics.
+Dependency graph (Rez: rez-depends). Default format is list; use `-f dot` or `-f mermaid` for graphs.
 
 ```powershell
-pkg scan              # Default locations
-pkg scan ./repo       # Specific path
+pkg depends maya           # List format
+pkg depends maya -f dot    # Graphviz DOT
+pkg depends maya -f mermaid  # Mermaid
+pkg depends maya -R        # Reverse dependencies
+pkg depends maya -d 2      # Limit depth
 ```
+
+## build
+
+Build the package in the current directory (package.py). Use `--install` to install to repo.
+
+```powershell
+pkg build
+pkg build --install
+pkg build --build-system cargo --install
+pkg build --build-args "--release"
+```
+
+## pip
+
+Import a PyPI package into the repository (Rez: rez-pip). Everything after the package name is passed to `pip install`.
+
+```powershell
+pkg pip install appdirs
+pkg pip install appdirs -U --no-cache-dir
+pkg pip appdirs -i
+```
+
+## bind
+
+Bind system software as packages (Rez: rez-bind). Modules: platform, arch, os, python, rez, setuptools, pip.
+
+```powershell
+pkg bind --list            # List modules
+pkg bind --search python   # Search by name
+pkg bind python            # Bind one module
+pkg bind --quickstart      # Bind all built-in
+pkg bind --quickstart -r   # To release repo
+```
+
+## test
+
+Run package tests (pre_test_commands + tests section).
+
+```powershell
+pkg test mypkg
+pkg test mypkg --list
+pkg test mypkg --inplace
+```
+
+## config
+
+Show config paths and values.
+
+```powershell
+pkg config
+pkg config --json
+pkg config packages_path
+pkg config --search-list
+pkg config --source-list
+```
+
+## context, status, suite
+
+- `pkg context` — create or load .rxt context (--print-request, --print-resolve, --format, --which).
+- `pkg status` — show version, active context, visible suites.
+- `pkg suite --list` — list suites; `pkg suite --create DIR` — create suite.
+
+## cp, mv, rm, release
+
+- `pkg cp` — copy package(s) between repos.
+- `pkg mv` — move package(s).
+- `pkg rm` — remove package(s).
+- `pkg release` — release package to repo.
+
+## diff, interpret, gui, version, completions
+
+- `pkg diff` — compare two contexts.
+- `pkg interpret` — run rex code.
+- `pkg gui` — node editor GUI (graph, solve, export env).
+- `pkg version` — version and build info.
+- `pkg completions powershell|bash|zsh|fish` — generate shell completions.
 
 ## shell
 
@@ -70,43 +141,28 @@ Interactive mode with tab completion.
 
 ```powershell
 pkg shell
-pkg sh          # Alias
+pkg sh    # Alias
 ```
 
-## py
+## python (py)
 
-Python REPL with pkg module.
+Python REPL with pkg module loaded, or run a script.
 
 ```powershell
-pkg py                    # Interactive REPL
-pkg py script.py          # Run script
-pkg py script.py -- -v    # With arguments
+pkg python                  # REPL
+pkg py                      # Alias
+pkg py script.py            # Run script
+pkg py script.py -- -v      # With arguments
 ```
 
-## gen-repo
+## Other Rez-style commands
 
-Generate test repository with random packages for stress-testing.
-
-```powershell
-pkg gen-repo                     # Medium preset (50 x 3)
-pkg gen-repo --small             # 10 packages x 2 versions
-pkg gen-repo --large             # 200 packages x 5 versions
-pkg gen-repo --stress            # 1000 packages x 10 versions
-pkg gen-repo -n 100 -V 5         # Custom: 100 packages, 5 versions
-pkg gen-repo -o ./my-repo        # Custom output directory
-pkg gen-repo --seed 42           # Reproducible generation
-pkg gen-repo --dep-rate 0.5      # 50% dependency probability
-```
-
-Always includes core packages: maya, houdini, nuke, aftereffects, resolve, arnold, vray, redshift, usd, python.
-
-## completions
-
-Generate shell completions.
-
-```powershell
-pkg completions powershell
-pkg completions bash
-pkg completions zsh
-pkg completions fish
-```
+- `pkg bundle` — bundle context to dir/zip (bin-patch).
+- `pkg benchmark` — resolve benchmark.
+- `pkg yaml2py` — convert package.yaml to package.py.
+- `pkg pkg-cache` — package cache stats/clear/list.
+- `pkg pkg-ignore` — ignore patterns.
+- `pkg memcache` — memcache status (stub).
+- `pkg plugins` — list plugins.
+- `pkg selftest` — run self-tests.
+- `pkg help` — show usage.

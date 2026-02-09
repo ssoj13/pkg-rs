@@ -50,7 +50,7 @@ Date: 2026-02-08
 ## Test Results (C:\temp)
 
 - `pkg ls -L` with `-r C:\temp\pkg-repo` succeeded after adding `rezplugins`. Evidence: `C:/temp/pkg-tests/pkg_ls2.out`.
-- `pkg info blender` and `pkg info jangafx` show registered apps and env counts. Evidence: `C:/temp/pkg-tests/pkg_info_blender.out`, `C:/temp/pkg-tests/pkg_info_jangafx.out`.
+- `pkg view blender` and `pkg view jangafx` show registered apps and env counts. Evidence: `C:/temp/pkg-tests/pkg_view_blender.out`, `C:/temp/pkg-tests/pkg_view_jangafx.out`.
 - `pkg env blender --format json` returns BLENDER_ROOT and PATH entries. Evidence: `C:/temp/pkg-tests/pkg_env_blender.out`.
 - `pkg build` for `cargo_hello` succeeded and installed to `C:\temp\pkg-repo\cargo_hello\0.1.0`. Evidence: `C:/temp/pkg-tests/pkg_build_cargo2.out`, `C:/temp/pkg-tests/pkg_build_cargo2.err`.
 - `pkg build` for `cmake_hello` succeeded after MSVC env bootstrap; generator args accepted via `--build-args "-G Ninja"`. Evidence: `C:/temp/pkg-tests/pkg_build_cmake9.out`, `C:/temp/pkg-tests/pkg_build_cmake9.err`.

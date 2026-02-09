@@ -1,3 +1,0 @@
-"""
-Custom bind module override
-"""

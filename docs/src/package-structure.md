@@ -35,8 +35,8 @@ Package locations are resolved in this order:
 
 ```powershell
 # 1. CLI flag (highest priority)
-pkg -r C:\packages list
-pkg --repo /opt/packages list
+pkg -r C:\packages search
+pkg --repo /opt/packages search
 
 # 2. rezconfig packages_path (override with REZ_PACKAGES_PATH)
 $env:REZ_PACKAGES_PATH = "C:\pkg1;C:\pkg2"  # Windows
