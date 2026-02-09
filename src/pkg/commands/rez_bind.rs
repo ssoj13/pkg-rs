@@ -1,7 +1,7 @@
 //! Rez bind command. Uses bind_module registry (native + Python strategy); add/remove via config.
 
 use crate::cli::RezStubArgs;
-use pkg_lib::bind_module::{self, BindStrategy};
+use pkg_lib::bind_module;
 use pkg_lib::config;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -47,11 +47,7 @@ fn cmd_bind_list() -> ExitCode {
     let reg = bind_module::registry();
     println!("Bind modules (config: plugins.pkg_rs.bind_modules_extra / bind_modules_remove):");
     for m in &reg {
-        let tag = match m.strategy {
-            BindStrategy::Native => " [native]",
-            BindStrategy::Python => " [python]",
-        };
-        println!("  {}{}", m.name, tag);
+        println!("  {} [{}]", m.name, m.strategy_label());
     }
     ExitCode::SUCCESS
 }
@@ -168,16 +164,13 @@ fn cmd_quickstart(args: BindQuickstartArgs) -> ExitCode {
             continue;
         }
 
-        match module.strategy {
-            BindStrategy::Native => {
-                println!("Binding {} into {}...", module.name, install_path.display());
-                if let Err(e) = bind_module::bind_one(&module.name, &install_path, args.no_deps) {
-                    eprintln!("rez bind: {}", e);
-                    return ExitCode::FAILURE;
-                }
-            }
-            BindStrategy::Python => {
-                python_names.push(module.name.clone());
+        if module.strategy_label() == "python" {
+            python_names.push(module.name.clone());
+        } else {
+            println!("Binding {} into {}...", module.name, install_path.display());
+            if let Err(e) = bind_module::bind_one(&module.name, &install_path, args.no_deps) {
+                eprintln!("rez bind: {}", e);
+                return ExitCode::FAILURE;
             }
         }
     }

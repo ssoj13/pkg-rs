@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 /// Import a pip package into a repository layout.
+/// Синтаксис rez-pip: все аргументы после имени пакета пробрасываются в pip install.
 pub fn cmd_pip(
     storage: &Storage,
     package: String,
@@ -17,14 +18,16 @@ pub fn cmd_pip(
     release: bool,
     prefix: Option<PathBuf>,
     extra: Option<String>,
+    pip_passthrough: Vec<String>,
     extra_args: Vec<String>,
 ) -> ExitCode {
     if !install {
-        eprintln!("Expected one of: --install");
+        eprintln!("Используйте: pkg pip install <package>  или  pkg pip <package> -i");
         return ExitCode::FAILURE;
     }
 
     let mut merged_extra = config_extra_args();
+    merged_extra.extend(pip_passthrough);
     merged_extra.extend(parse_args(extra));
     merged_extra.extend(extra_args);
 

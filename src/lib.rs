@@ -151,6 +151,7 @@ pub mod storage;
 pub mod token;
 pub mod toolset;
 pub mod rex;
+pub mod bind;
 pub mod bind_module;
 
 pub mod gui;

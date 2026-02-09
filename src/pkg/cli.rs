@@ -16,7 +16,8 @@ use std::path::PathBuf;
     \x20 pkg env maya                Print environment\n\
     \x20 pkg env maya -- maya.exe    Launch with environment\n\
     \x20 pkg build                   Build package in current directory\n\
-    \x20 pkg pip <pkg> -i           Import pip package into repo\n\
+    \x20 pkg pip install <pkg> [pip args]  Import pip package (rez-pip style; -U, --no-cache-dir …)\n\
+    \x20 pkg pip <pkg> -i [pip args]        Same; pip args after -- also supported\n\
     \x20 pkg python                  Run embedded Python REPL")]
 #[command(after_help = "SUBCOMMAND OPTIONS:\n\
     Each command has its own options. Use 'pkg <command> --help' to see them:\n\
@@ -120,32 +121,41 @@ pub(crate) struct BuildArgs {
     pub(crate) extra_args: Vec<String>,
 }
 
+/// Синтаксис как rez-pip: -i, -r, -p, --python-version, пакет; все аргументы после
+/// имени пакета пробрасываются в `pip install` (-U, --no-cache-dir и т.д.).
 #[derive(Args, Debug, Clone)]
 pub(crate) struct PipArgs {
-    /// Package name, path, or URL to install
-    pub(crate) package: String,
-    /// Python version to use for pip (e.g., 3.11)
+    /// "install" и имя пакета, или только имя пакета с -i
+    #[arg(required = true)]
+    pub(crate) first: String,
+    /// Имя пакета, если первый аргумент — "install"
+    #[arg()]
+    pub(crate) second: Option<String>,
+    /// Аргументы для pip install (всё после имени пакета: -U, --no-cache-dir, …)
+    #[arg(trailing_var_arg = true)]
+    pub(crate) pip_passthrough: Vec<String>,
+    /// Версия Python (rez: python-MAJOR.MINOR)
     #[arg(long = "python-version")]
     pub(crate) python_version: Option<String>,
-    /// Do not install dependencies
+    /// Не ставить зависимости (pip --no-deps)
     #[arg(long = "no-deps", conflicts_with = "min_deps")]
     pub(crate) no_deps: bool,
-    /// Install minimal dependencies (default)
+    /// Минимальные зависимости (по умолчанию)
     #[arg(long = "min-deps", conflicts_with = "no_deps")]
     pub(crate) min_deps: bool,
-    /// Install the package (required)
+    /// Установить пакет (обязательно с -i или «install»)
     #[arg(short = 'i', long)]
     pub(crate) install: bool,
-    /// Install as released package
-    #[arg(long)]
+    /// Установить как release (rez: -r)
+    #[arg(short = 'r', long)]
     pub(crate) release: bool,
-    /// Install to a custom package repository path
-    #[arg(short = 'p', long)]
+    /// Путь к репозиторию пакетов (rez: -p/--prefix)
+    #[arg(short = 'p', long = "prefix")]
     pub(crate) prefix: Option<PathBuf>,
-    /// Extra args passed to pip install
-    #[arg(long = "extra")]
+    /// Доп. аргументы pip (строка из конфига или -e "…")
+    #[arg(short = 'e', long = "extra")]
     pub(crate) extra: Option<String>,
-    /// Extra pip args after --
+    /// Доп. аргументы pip после --
     #[arg(last = true)]
     pub(crate) extra_args: Vec<String>,
 }

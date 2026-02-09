@@ -154,17 +154,29 @@ fn main() -> ExitCode {
             install_path,
         } => commands::cmd_build_env(build_path, variant_index, install, install_path),
         Commands::Pip(args) => {
-            debug!("cmd: pip package={}", args.package);
+            let (package, install) = if args.first.eq_ignore_ascii_case("install") {
+                match &args.second {
+                    Some(pkg) => (pkg.clone(), true),
+                    None => {
+                        eprintln!("pkg pip install <package> — укажите имя пакета (например: pkg pip install appdirs)");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            } else {
+                (args.first.clone(), args.install)
+            };
+            debug!("cmd: pip package={}", package);
             commands::cmd_pip(
                 &storage,
-                args.package,
+                package,
                 args.python_version,
                 args.no_deps,
                 args.min_deps,
-                args.install,
+                install,
                 args.release,
                 args.prefix,
                 args.extra,
+                args.pip_passthrough,
                 args.extra_args,
             )
         }

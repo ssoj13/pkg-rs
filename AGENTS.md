@@ -21,7 +21,7 @@ This document provides comprehensive dataflow and codepath diagrams for the pkg-
 pkg-rs is a VFX package manager similar to [rez](https://github.com/AcademySoftwareFoundation/rez). It provides:
 
 - **Package Discovery**: Scans filesystem for `package.py` definitions
-- **Dependency Resolution**: Uses PubGrub (pkg) or Rez (python) backend via `plugins.pkg_rs.resolver_backend`
+- **Dependency Resolution**: PubGrub (оба бэкенда `pkg` и `rez` используют один и тот же движок), выбор через `plugins.pkg_rs.resolver_backend`
 - **Environment Management**: Manages environment variables for package contexts
 - **Application Launching**: Runs applications with configured environments
 
@@ -357,13 +357,14 @@ quickstart ?
 ```
 
 **Итог по bind:**
+- Rez у нас — один бинарник; bind копирует его в пакет и выставляет PATH/PYTHONPATH.
 
 | Вызов | Обработка |
 |-------|-----------|
 | `rez bind --list` | Регистр модулей (native + python), теги [native]/[python]; конфиг: bind_modules_extra / bind_modules_remove |
 | `rez bind --search [pattern]` | Поиск по имени в регистре |
-| `rez bind <name>` | bind_module::bind_one: Native — Rust (platform/arch/os), Python — rez.package_bind; имя не из регистра → ошибка со списком доступных |
-| `rez bind --quickstart` | По регистру: Native — bind_one по одному; Python — run_python_bind_batch; уже установленные пропускаются |
+| `rez bind <name>` | bind_module::bind_one: встроенные модули — Rust (platform, arch, os, python, rez, setuptools, pip); имена из config extra — rez.package_bind; неизвестное имя → ошибка со списком доступных |
+| `rez bind --quickstart` | По регистру: встроенные — bind_one по одному; из config extra — run_python_bind_batch; уже установленные пропускаются |
 
 ### 1. Package Discovery Flow
 
@@ -801,7 +802,7 @@ pkg_lib (lib.rs)
 
 ### Embedded Rez Runtime
 
-- `python/rez` and `python/rezplugins` must be present on `sys.path` for config and resolver imports
+- `python/rez` и `python/rezplugins` на `sys.path` нужны только для Loader (package.py) и при bind имён из config extra (rez.package_bind)
 - `ensure_rez_on_sys_path` inserts the python root (see `src/py.rs`)
 
 ---
@@ -823,14 +824,14 @@ pkg_lib (lib.rs)
 | Toolsets | `src/toolset.rs` | `ToolsetDef`, `scan_toolsets_dir` |
 | Errors | `src/error.rs` | All error enums |
 | Solver | `src/solver/mod.rs` | `Solver`, `PackageIndex` |
-| Resolver interface | `src/solver/backend.rs` | Trait `Resolver`: `name()`, `solve(packages, requirements, config)`; `ResolverBackend::Pkg` (PubGrub) and `ResolverBackend::Rez` (Python) implement it; switch via `plugins.pkg_rs.resolver_backend` |
+| Resolver interface | `src/solver/backend.rs` | Trait `Resolver`: `name()`, `solve(packages, requirements, config)`; оба бэкенда Pkg и Rez используют PubGrub и пакеты из Storage; переключение через `plugins.pkg_rs.resolver_backend` |
 | Filters/orderers | `src/solver/filter.rs`, `order.rs` | `PackageFilterList`, `PackageOrderList` (from config `package_filter`, `package_orderers` when backend=pkg) |
 | PubGrub | `src/solver/provider.rs` | `PubGrubProvider` |
 | Ranges | `src/solver/ranges.rs` | `depspec_to_ranges` |
 | Cache | `src/cache.rs` | `Cache` (package.py path → entry; mtime invalidation; pkg-cache CLI) |
 | Bundle lib patch | `src/bundle_patch.rs` | `patch_bundle_libs`, uses `crates/bin-patch` (ELF/Mach-O) |
 | Rex (package commands) | `src/rex.rs` | `apply_package_commands`, `packages_in_rex_order`, `package_root_from_source`; used by `pkg env` and `pkg test` |
-| Bind modules | `src/bind_module.rs` | Registry (Native/Python), `list_names`, `search_names`, `bind_one`, `run_python_bind_batch`; config: `plugins.pkg_rs.bind_modules_extra` / `bind_modules_remove` |
+| Bind modules | `src/bind_module.rs`, `src/bind/` | Трейт `BindHandler`; один файл на пакет. setuptools/pip: копирование модуля в пакет + PYTHONPATH (и для pip — PATH, exe в bin), как в Rez. Регистр = `builtin_handlers()` + config extra (Python fallback) − config remove. |
 
 ### CLI Commands
 
@@ -846,7 +847,7 @@ pkg_lib (lib.rs)
 
 ### Python boundary and port-to-Rust
 
-All Python/PyO3 entry points and a porting plan are in **md/PORT_TO_RUST.md**. **Config:** native path implemented — defaults from `config/rezconfig_default.json`, YAML/JSON overrides only; if no .py in override chain, no Python is used (see config.rs `load_config_native`, `override_paths_require_python`). Remaining: solver Rez, loader, rex, bind, build, pip.
+Точки входа Python и план портирования — **md/PORT_TO_RUST.md**. **Config:** нативный путь без Python при отсутствии .py в цепочке. **Solver:** backend=rez использует PubGrub. **Bind:** встроенные модули в Rust (один файл на пакет). Остаётся зависимость от Python: Loader (package.py), rex, build, pip (fallback есть), имена из bind_modules_extra (rez.package_bind).
 
 ### Caching (TODO.md parity)
 
