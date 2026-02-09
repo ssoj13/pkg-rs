@@ -216,19 +216,13 @@ graph LR
 ### 0. Config Layering (ASCII)
 
 ```
-Defaults (rezconfig.py)
+Embedded rezconfig.py (defaults)
   |
   v
-Config list (REZ_CONFIG_FILE)
+--cfg | REZ_CONFIG_FILE | rezconfig.py next to exe | ~/.pkg-rs/rezconfig.py (only .py; no YAML/JSON)
   |
   v
-Home config (~/.rezconfig; skip if REZ_DISABLE_HOME_CONFIG)
-  |
-  v
-Env overrides (REZ_*; plugins excluded)
-  |
-  v
-Env JSON overrides (REZ_*_JSON)
+Env overrides (REZ_*, REZ_*_JSON)
   |
   v
 Package config section (build/release only)
@@ -829,6 +823,7 @@ pkg_lib (lib.rs)
 | Toolsets | `src/toolset.rs` | `ToolsetDef`, `scan_toolsets_dir` |
 | Errors | `src/error.rs` | All error enums |
 | Solver | `src/solver/mod.rs` | `Solver`, `PackageIndex` |
+| Resolver interface | `src/solver/backend.rs` | Trait `Resolver`: `name()`, `solve(packages, requirements, config)`; `ResolverBackend::Pkg` (PubGrub) and `ResolverBackend::Rez` (Python) implement it; switch via `plugins.pkg_rs.resolver_backend` |
 | Filters/orderers | `src/solver/filter.rs`, `order.rs` | `PackageFilterList`, `PackageOrderList` (from config `package_filter`, `package_orderers` when backend=pkg) |
 | PubGrub | `src/solver/provider.rs` | `PubGrubProvider` |
 | Ranges | `src/solver/ranges.rs` | `depspec_to_ranges` |
@@ -848,6 +843,10 @@ pkg_lib (lib.rs)
 | `pkg scan` | `commands/scan.rs` | Scan locations |
 | `pkg test <pkg>` | `commands/rez_test.rs` | Run package tests (pre_test_commands + tests section) |
 | `pkg shell` | `shell.rs` | Interactive mode |
+
+### Python boundary and port-to-Rust
+
+All Python/PyO3 entry points and a porting plan are in **md/PORT_TO_RUST.md**. **Config:** native path implemented — defaults from `config/rezconfig_default.json`, YAML/JSON overrides only; if no .py in override chain, no Python is used (see config.rs `load_config_native`, `override_paths_require_python`). Remaining: solver Rez, loader, rex, bind, build, pip.
 
 ### Caching (TODO.md parity)
 

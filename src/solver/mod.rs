@@ -46,10 +46,11 @@
 //!     print(f"Resolution failed: {e}")
 //! ```
 
-mod provider;
-mod ranges;
+mod backend;
 mod filter;
 mod order;
+mod provider;
+mod ranges;
 
 use crate::dep::DepSpec;
 use crate::error::SolverError;
@@ -65,7 +66,8 @@ use std::collections::HashMap;
 
 use crate::rez_version::Version;
 
-// Re-export PubGrub provider for advanced usage
+// Re-export unified resolver interface and PubGrub provider
+pub use backend::Resolver;
 pub use provider::PubGrubProvider;
 pub use ranges::depspec_to_ranges;
 
@@ -108,30 +110,69 @@ pub fn solve_reqs_backend_with_config(
     requirements: Vec<String>,
     cfg: Option<&config::Config>,
 ) -> Result<Vec<String>, SolverError> {
-    match selected_backend_for(cfg)? {
-        ResolverBackend::Pkg => {
-            let plugin_config = plugins::PluginConfig::from_config(cfg);
-            let package_filter = if plugins::is_enabled(&plugin_config.package_filters, "builtin") {
-                PackageFilterList::from_config(cfg)?
-            } else {
-                None
-            };
-            let package_orderers = if plugins::is_enabled(&plugin_config.package_orderers, "builtin") {
-                PackageOrderList::from_config(cfg)?
-            } else {
-                None
-            };
+    let backend = selected_backend_for(cfg)?;
+    backend.solve(packages, requirements, cfg)
+}
 
-            let index = PackageIndex::from_packages_with_prefs(
-                packages,
-                package_filter.as_ref(),
-                package_orderers.as_ref(),
-            )?;
-            let solver = Solver::from_index(index);
-            solver.solve_requirements_impl(&requirements)
+// -----------------------------------------------------------------------------
+// Backend implementations (unified interface)
+// -----------------------------------------------------------------------------
+
+impl Resolver for ResolverBackend {
+    fn name(&self) -> &'static str {
+        match self {
+            ResolverBackend::Pkg => "pkg",
+            ResolverBackend::Rez => "rez",
         }
-        ResolverBackend::Rez => solve_reqs_rez(&requirements),
     }
+
+    fn solve(
+        &self,
+        packages: &[Package],
+        requirements: Vec<String>,
+        config: Option<&config::Config>,
+    ) -> Result<Vec<String>, SolverError> {
+        match self {
+            ResolverBackend::Pkg => solve_reqs_pubgrub(packages, requirements, config),
+            ResolverBackend::Rez => solve_reqs_rez_impl(requirements, config),
+        }
+    }
+}
+
+/// PubGrub backend: index from packages + filter/order from config, then SAT solve.
+fn solve_reqs_pubgrub(
+    packages: &[Package],
+    requirements: Vec<String>,
+    cfg: Option<&config::Config>,
+) -> Result<Vec<String>, SolverError> {
+    let plugin_config = plugins::PluginConfig::from_config(cfg);
+    let package_filter = if plugins::is_enabled(&plugin_config.package_filters, "builtin") {
+        PackageFilterList::from_config(cfg)?
+    } else {
+        None
+    };
+    let package_orderers =
+        if plugins::is_enabled(&plugin_config.package_orderers, "builtin") {
+            PackageOrderList::from_config(cfg)?
+        } else {
+            None
+        };
+
+    let index = PackageIndex::from_packages_with_prefs(
+        packages,
+        package_filter.as_ref(),
+        package_orderers.as_ref(),
+    )?;
+    let solver = Solver::from_index(index);
+    solver.solve_requirements_impl(&requirements)
+}
+
+/// Rez (Python) backend: uses config paths and Rez solver in Python.
+fn solve_reqs_rez_impl(
+    requirements: Vec<String>,
+    _config: Option<&config::Config>,
+) -> Result<Vec<String>, SolverError> {
+    solve_reqs_rez(&requirements)
 }
 
 struct PyConfigSwapGuard {

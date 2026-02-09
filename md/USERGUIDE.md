@@ -27,18 +27,18 @@ pkg env maya -- "C:\Program Files\Autodesk\Maya2024\bin\maya.exe"
 Why this flow: you first tell the scanner where packages live, then verify
 the data (`list`/`info`), then build an environment and run the software.
 
-## Configuration (rezconfig.py)
+## Configuration (rezconfig.py only)
 
-pkg loads Rez config via embedded `rez.config`. Precedence:
+Config is **only** `rezconfig.py` in the following locations (later overrides earlier):
 
-1. `--cfg <path>` (full override, error if missing)
-2. `REZ_CONFIG_FILE` env var (list)
-3. `~/.rezconfig` (skipped if `REZ_DISABLE_HOME_CONFIG=1`)
+1. `--cfg <path>` (single file)
+2. `REZ_CONFIG_FILE` or `REZ_CONFIG_PATH` (list of paths)
+3. `rezconfig.py` next to the pkg executable
+4. `~/.pkg-rs/rezconfig.py` (created from embedded default if missing when no other config is set)
 
-Defaults come from embedded `rezconfig.py`. Any `REZ_<KEY>` or `REZ_<KEY>_JSON`
-variable overrides the matching setting.
+Defaults come from embedded `rezconfig.py`. Env overrides: `REZ_<KEY>` and `REZ_<KEY>_JSON` apply on top. No YAML/JSON config files.
 
-Example `~/.rezconfig`:
+Example `~/.pkg-rs/rezconfig.py`:
 
 ```python
 packages_path = ["D:/packages", "D:/tools"]

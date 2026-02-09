@@ -117,6 +117,7 @@
 ## 7. Ссылки
 
 - [PARITY.md](PARITY.md) — парность с Rez, оценка (~85%).
+- [md/PORT_TO_RUST.md](md/PORT_TO_RUST.md) — полный обзор границ Python и план портирования на Rust (config, solver, bind, pip, rex, loader).
 - [md/PLAN.md](md/PLAN.md) — интеграционный план (build, pip, плагины).
 - [TODO.md](TODO.md) — Rez parity roadmap.
 - [AGENTS.md](AGENTS.md) — архитектура, потоки данных.

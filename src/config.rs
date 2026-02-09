@@ -121,10 +121,8 @@ fn load_config() -> Result<&'static Config, ConfigError> {
 fn load_rez_config(override_path: Option<&Path>) -> Result<Config, ConfigError> {
     let _ = Python::initialize();
     let mut data = load_default_rezconfig()?;
-    let mut override_paths = resolve_override_paths(override_path);
-    if let Some(path) = ensure_default_rezconfig(override_path)? {
-        override_paths = vec![path];
-    }
+    let override_paths = resolve_override_paths(override_path);
+    ensure_default_rezconfig(override_path)?;
     let mut filepaths = Vec::new();
     filepaths.push(PathBuf::from(EMBEDDED_REZCONFIG_PATH));
     filepaths.extend(override_paths.iter().cloned());
@@ -148,50 +146,46 @@ fn load_rez_config(override_path: Option<&Path>) -> Result<Config, ConfigError> 
     })
 }
 
+/// Ordered locations for rezconfig.py (fallback: later in list overrides earlier when merged).
 fn resolve_override_paths(override_path: Option<&Path>) -> Vec<PathBuf> {
     if let Some(path) = override_path {
         return vec![path.to_path_buf()];
     }
 
-    let env_paths = env::var("REZ_CONFIG_FILE")
+    let mut out = env::var("REZ_CONFIG_FILE")
         .or_else(|_| env::var("REZ_CONFIG_PATH"))
         .ok()
         .map(|raw| env::split_paths(&raw).collect::<Vec<_>>())
         .unwrap_or_default();
-    if !env_paths.is_empty() {
-        return env_paths;
-    }
 
     if let Some(path) = rezconfig_next_to_exe() {
-        return vec![path];
+        out.push(path);
     }
-
     if let Some(home) = dirs::home_dir() {
-        return vec![home.join(".pkg-rs").join("rezconfig.py")];
+        out.push(home.join(".pkg-rs").join("rezconfig.py"));
     }
 
-    Vec::new()
+    out
 }
 
-fn ensure_default_rezconfig(
-    override_path: Option<&Path>,
-) -> Result<Option<PathBuf>, ConfigError> {
+/// Create ~/.pkg-rs/rezconfig.py from embedded default when no other config exists.
+fn ensure_default_rezconfig(override_path: Option<&Path>) -> Result<(), ConfigError> {
     if override_path.is_some() {
-        return Ok(None);
+        return Ok(());
     }
     if env::var("REZ_CONFIG_FILE").is_ok() || env::var("REZ_CONFIG_PATH").is_ok() {
-        return Ok(None);
+        return Ok(());
     }
     if rezconfig_next_to_exe().is_some() {
-        return Ok(None);
+        return Ok(());
     }
 
     let Some(home) = dirs::home_dir() else {
-        return Ok(None);
+        return Ok(());
     };
     let path = home.join(".pkg-rs").join("rezconfig.py");
     if path.exists() {
-        return Ok(Some(path));
+        return Ok(());
     }
 
     if let Some(parent) = path.parent() {
@@ -206,7 +200,7 @@ fn ensure_default_rezconfig(
         reason: e.to_string(),
     })?;
 
-    Ok(Some(path))
+    Ok(())
 }
 
 fn rezconfig_next_to_exe() -> Option<PathBuf> {
@@ -224,52 +218,18 @@ fn load_default_rezconfig() -> Result<JsonValue, ConfigError> {
     load_rezconfig_source(EMBEDDED_REZCONFIG_PATH, DEFAULT_REZCONFIG_SOURCE)
 }
 
+/// Load only rezconfig.py (no YAML/JSON).
 fn load_config_file(path: &Path) -> Result<Option<(JsonValue, PathBuf)>, ConfigError> {
-    let mut candidates = Vec::new();
-    if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-        candidates.push(path.to_path_buf());
-        if ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml") {
-            return load_yaml_config(path).map(|doc| doc.map(|d| (d, path.to_path_buf())));
-        }
+    let candidate = if path.extension().map_or(false, |e| e.eq_ignore_ascii_case("py")) {
+        path.to_path_buf()
     } else {
-        candidates.push(path.with_extension("py"));
-        candidates.push(path.with_extension("yaml"));
-        candidates.push(path.with_extension("yml"));
+        path.with_extension("py")
+    };
+    if !candidate.exists() {
+        return Ok(None);
     }
-
-    for candidate in candidates {
-        if !candidate.exists() {
-            continue;
-        }
-        if candidate.extension().and_then(|s| s.to_str()).map(|s| s.eq_ignore_ascii_case("py")).unwrap_or(false) {
-            let doc = load_rezconfig_file(&candidate)?;
-            return Ok(Some((doc, candidate)));
-        }
-        if candidate.extension().and_then(|s| s.to_str()).map(|s| s.eq_ignore_ascii_case("yaml") || s.eq_ignore_ascii_case("yml")).unwrap_or(false) {
-            let doc = load_yaml_config(&candidate)?;
-            if let Some(doc) = doc {
-                return Ok(Some((doc, candidate)));
-            }
-        }
-    }
-
-    Ok(None)
-}
-
-fn load_yaml_config(path: &Path) -> Result<Option<JsonValue>, ConfigError> {
-    let content = fs::read_to_string(path).map_err(|e| ConfigError {
-        path: Some(path.to_path_buf()),
-        reason: e.to_string(),
-    })?;
-    let doc: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| ConfigError {
-        path: Some(path.to_path_buf()),
-        reason: e.to_string(),
-    })?;
-    let json = serde_json::to_value(doc).map_err(|e| ConfigError {
-        path: Some(path.to_path_buf()),
-        reason: e.to_string(),
-    })?;
-    Ok(Some(json))
+    let doc = load_rezconfig_file(&candidate)?;
+    Ok(Some((doc, candidate)))
 }
 
 fn load_rezconfig_file(path: &Path) -> Result<JsonValue, ConfigError> {
