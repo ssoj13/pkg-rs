@@ -90,6 +90,9 @@ pub enum Action {
     /// Uses OS path separator.
     /// Example: existing="A", new="B" -> "B:A"
     Insert,
+
+    /// Alias for Insert (Rez uses "prepend" = add to beginning).
+    Prepend,
 }
 
 impl Action {
@@ -104,7 +107,7 @@ impl Action {
         match s.to_lowercase().as_str() {
             "set" => Ok(Action::Set),
             "append" => Ok(Action::Append),
-            "insert" => Ok(Action::Insert),
+            "insert" | "prepend" => Ok(Action::Insert),
             _ => Err(EvarError::InvalidAction {
                 action: s.to_string(),
             }),
@@ -116,7 +119,7 @@ impl Action {
         match self {
             Action::Set => "set",
             Action::Append => "append",
-            Action::Insert => "insert",
+            Action::Insert | Action::Prepend => "insert",
         }
     }
 }
@@ -340,7 +343,7 @@ impl Evar {
                     format!("{}{}{}", self.value, path_sep(), other.value)
                 }
             }
-            Action::Insert => {
+            Action::Insert | Action::Prepend => {
                 if self.value.is_empty() {
                     other.value.clone()
                 } else if other.value.is_empty() {
@@ -450,7 +453,7 @@ impl Evar {
                 };
                 std::env::set_var(&self.name, new_value);
             }
-            Action::Insert => {
+            Action::Insert | Action::Prepend => {
                 let current = std::env::var(&self.name).unwrap_or_default();
                 let new_value = if current.is_empty() {
                     self.value.clone()
@@ -478,6 +481,7 @@ mod tests {
         assert_eq!(Action::from_str("set").unwrap(), Action::Set);
         assert_eq!(Action::from_str("APPEND").unwrap(), Action::Append);
         assert_eq!(Action::from_str("Insert").unwrap(), Action::Insert);
+        assert_eq!(Action::from_str("prepend").unwrap(), Action::Insert);
         assert!(Action::from_str("invalid").is_err());
     }
 
