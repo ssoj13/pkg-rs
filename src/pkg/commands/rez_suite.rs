@@ -1,7 +1,6 @@
-//! Rez suite command (native subset with fallback to Python rez).
+//! Rez suite command (native). --list, --create, single DIR only.
 
 use crate::cli::RezStubArgs;
-use crate::commands::rez_passthrough::cmd_rez_passthrough;
 use serde_yaml::Value as YamlValue;
 use std::collections::{BTreeSet, HashMap};
 use std::env;
@@ -10,16 +9,12 @@ use std::process::ExitCode;
 
 pub fn cmd_rez_suite(args: &RezStubArgs) -> ExitCode {
     let parsed = match parse_suite_args(&args.args) {
-        Ok(parsed) => parsed,
-        Err(_) => {
-            eprintln!("rez suite: unsupported or invalid arguments");
+        Ok(p) => p,
+        Err(()) => {
+            eprintln!("rez suite: unsupported option or argument (supported: --list, --create, DIR)");
             return ExitCode::FAILURE;
         }
     };
-
-    if parsed.fallback {
-        return cmd_rez_passthrough("suite", &args.args);
-    }
 
     run_suite(parsed)
 }
@@ -29,7 +24,6 @@ struct SuiteArgs {
     list: bool,
     create: bool,
     dir: Option<PathBuf>,
-    fallback: bool,
 }
 
 fn parse_suite_args(args: &[String]) -> Result<SuiteArgs, ()> {
@@ -45,49 +39,13 @@ fn parse_suite_args(args: &[String]) -> Result<SuiteArgs, ()> {
                 parsed.create = true;
                 i += 1;
             }
-            "--tools"
-            | "--which"
-            | "--validate"
-            | "--add"
-            | "--remove"
-            | "--context"
-            | "--interactive"
-            | "--prefix"
-            | "--suffix"
-            | "--hide"
-            | "--unhide"
-            | "--alias"
-            | "--unalias"
-            | "--bump"
-            | "--find-request"
-            | "--find-resolve"
-            | "--prefix-char"
-            | "-t"
-            | "-c"
-            | "-i"
-            | "-a"
-            | "-r"
-            | "-d"
-            | "-p"
-            | "-s"
-            | "-P"
-            | "-b" => {
-                parsed.fallback = true;
-                i += 1;
-            }
-            "--" => {
-                parsed.fallback = true;
-                break;
-            }
-            arg if arg.starts_with('-') => {
-                parsed.fallback = true;
-                i += 1;
-            }
+            "--" => return Err(()),
+            arg if arg.starts_with('-') => return Err(()), // only --list, --create supported natively
             _ => {
                 if parsed.dir.is_none() {
                     parsed.dir = Some(PathBuf::from(&args[i]));
                 } else {
-                    parsed.fallback = true;
+                    return Err(());
                 }
                 i += 1;
             }

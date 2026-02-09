@@ -271,10 +271,10 @@ pkg env -> solve -> _env -> stamp -> solve_impl
 Emit/commit env
   |
   v
-NOTE: pre_commands/commands/post_commands/pre_test_commands are not executed.
+NOTE: pre_commands/commands/post_commands are now executed in `pkg env` (rex); pre_test_commands in `pkg test` (rex).
 ```
 
-Target (Rez parity):
+Target (Rez parity, implemented):
 ```
 Package + deps + variant
   |
@@ -291,18 +291,9 @@ Env mutations merged
 Emit/commit env or run app
 ```
 
-Tests (Rez parity target):
+Tests (Rez parity, implemented in `pkg test`):
 ```
-ResolvedContext
-  |
-  v
-Execute pre_test_commands
-  |
-  v
-Execute tests entries
-  |
-  v
-Test report
+Resolved env -> pre_test_commands (rex, merge) -> re-solve -> run test entries -> PASS/FAIL/SKIP report
 ```
 
 ### 0.3 CLI Entry Points (Single Binary)
@@ -318,6 +309,66 @@ subcommands
   +-- pip (pkg rez pip) ----> cmd_pip
   +-- rez <cmd> (unimplemented) -> stub error + parity TODO
 ```
+
+### 0.4 Rez: все команды нативные
+
+Делегирование в Python Rez CLI (passthrough) удалено. **bind**, **context**, **status**, **suite** обрабатываются только в Rust; неподдерживаемые флаги/аргументы приводят к ошибке (eprintln + ExitCode::FAILURE).
+
+### 0.5 Rez bind — что делает сейчас (ASCII)
+
+```
+User: pkg rez bind [args]
+  |
+  v
+parse_bind_args(args)
+  |
+  +-- --list / -l     -> list = true
+  +-- --search / -s   -> search = true
+  +-- --quickstart    -> quickstart = true
+  +-- --release / -r  -> release = true
+  +-- --no-deps       -> no_deps = true
+  +-- --install-path / -i <path> -> install_path
+  +-- первый не-флаг  -> pkg = "name"
+  +-- остальное       -> unknown[]
+  v
+```
+
+**Ветвление:**
+
+```
+list ?     --> cmd_bind_list()   (печать известных имён: platform, arch, os, python, rez, …)
+search ?   --> cmd_bind_search() (фильтр по паттерну из pkg)
+  |
+  NO
+  v
+quickstart ?
+  |
+  NO --> unknown.is_empty() && pkg == Some("platform"|"arch"|"os") ?
+  |         |
+  |         YES --> try_native_bind(pkg, args)
+  |         |
+  |         NO --> eprintln "binding 'X' is not implemented" | "unsupported arguments" → FAILURE
+  |
+  YES --> cmd_quickstart(parsed)
+              |
+              +-- install_path: -i | release_packages_path | local_packages_path
+              +-- ensure_rez_on_sys_path, ensure_python_executable
+              +-- Python: rez.package_bind.bind_package(name, path=..., no_deps=True)
+              |     для каждого: platform, arch, os, python, rez, rezgui, setuptools, pip
+              |     (пропуск если уже есть в install_path)
+              +-- _print_package_list(installed_variants)
+              v
+           ExitCode
+```
+
+**Итог по bind:**
+
+| Вызов | Обработка |
+|-------|-----------|
+| `rez bind --list` | Регистр модулей (native + python), теги [native]/[python]; конфиг: bind_modules_extra / bind_modules_remove |
+| `rez bind --search [pattern]` | Поиск по имени в регистре |
+| `rez bind <name>` | bind_module::bind_one: Native — Rust (platform/arch/os), Python — rez.package_bind; имя не из регистра → ошибка со списком доступных |
+| `rez bind --quickstart` | По регистру: Native — bind_one по одному; Python — run_python_bind_batch; уже установленные пропускаются |
 
 ### 1. Package Discovery Flow
 
@@ -781,6 +832,8 @@ pkg_lib (lib.rs)
 | Ranges | `src/solver/ranges.rs` | `depspec_to_ranges` |
 | Cache | `src/cache.rs` | `Cache` |
 | Bundle lib patch | `src/bundle_patch.rs` | `patch_bundle_libs`, uses `crates/bin-patch` (ELF/Mach-O) |
+| Rex (package commands) | `src/rex.rs` | `apply_package_commands`, `packages_in_rex_order`, `package_root_from_source`; used by `pkg env` and `pkg test` |
+| Bind modules | `src/bind_module.rs` | Registry (Native/Python), `list_names`, `search_names`, `bind_one`, `run_python_bind_batch`; config: `plugins.pkg_rs.bind_modules_extra` / `bind_modules_remove` |
 
 ### CLI Commands
 
@@ -791,6 +844,7 @@ pkg_lib (lib.rs)
 | `pkg env <pkg>` | `commands/env.rs` | Environment and launch |
 | `pkg graph <pkg>` | `commands/graph.rs` | Dep graph |
 | `pkg scan` | `commands/scan.rs` | Scan locations |
+| `pkg test <pkg>` | `commands/rez_test.rs` | Run package tests (pre_test_commands + tests section) |
 | `pkg shell` | `shell.rs` | Interactive mode |
 
 ---

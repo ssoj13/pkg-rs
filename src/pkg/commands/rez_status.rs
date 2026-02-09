@@ -1,45 +1,17 @@
-//! Rez status command (native subset with fallback to Python rez).
+//! Rez status command (native). No arguments: version, active context, visible suites.
 
 use crate::cli::RezStubArgs;
-use crate::commands::rez_passthrough::cmd_rez_passthrough;
 use std::collections::BTreeSet;
 use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 pub fn cmd_rez_status(args: &RezStubArgs) -> ExitCode {
-    let parsed = match parse_status_args(&args.args) {
-        Ok(parsed) => parsed,
-        Err(_) => {
-            eprintln!("rez status: unsupported or invalid arguments");
-            return ExitCode::FAILURE;
-        }
-    };
-
-    if parsed.fallback {
-        return cmd_rez_passthrough("status", &args.args);
+    if !args.args.is_empty() {
+        eprintln!("rez status: does not accept arguments");
+        return ExitCode::FAILURE;
     }
-
     run_status()
-}
-
-#[derive(Debug, Default)]
-struct StatusArgs {
-    fallback: bool,
-}
-
-fn parse_status_args(args: &[String]) -> Result<StatusArgs, ()> {
-    let mut parsed = StatusArgs::default();
-    for arg in args {
-        if arg == "-t" || arg == "--tools" {
-            parsed.fallback = true;
-        } else if !arg.starts_with('-') {
-            parsed.fallback = true;
-        } else {
-            parsed.fallback = true;
-        }
-    }
-    Ok(parsed)
 }
 
 fn run_status() -> ExitCode {

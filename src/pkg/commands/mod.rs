@@ -6,7 +6,6 @@ mod build;
 mod build_env;
 mod pip;
 mod rez_config;
-mod rez_passthrough;
 mod rez_bind;
 mod rez_context;
 mod rez_status;

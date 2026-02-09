@@ -1,7 +1,11 @@
 //! Rez test command.
+//!
+//! Runs package tests: resolves env, executes pre_test_commands (rex-style),
+//! then runs each test entry (shell or exec) and prints a summary.
 
 use crate::cli::TestArgs;
 use pkg_lib::dep::DepSpec;
+use pkg_lib::rex::{apply_package_commands, package_root_from_source};
 use pkg_lib::{config, Env, Package, Storage};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -235,7 +239,7 @@ fn run_test(
         build_test_env(storage, pkg, test, args)
     };
 
-    let env = match base_env {
+    let mut env = match base_env {
         Ok(env) => env,
         Err(reason) => return TestOutcome::Skipped(reason),
     };
@@ -246,10 +250,16 @@ fn run_test(
         return TestOutcome::Skipped("dry-run".to_string());
     }
 
+    // Run pre_test_commands rex-style and merge env mutations, then re-solve
     if let Some(pre) = pkg.pre_test_commands.as_ref() {
-        if let Err(err) = run_shell(pre, pkg, &env, &[]) {
+        let root_path = package_root_from_source(pkg.package_source.as_ref());
+        if let Err(err) = apply_package_commands(&mut env, pkg, pre, root_path.as_deref()) {
             return TestOutcome::Failed(format!("pre_test_commands failed: {}", err));
         }
+        env = match env.solve_impl(10, true) {
+            Ok(solved) => solved,
+            Err(e) => return TestOutcome::Failed(format!("env solve after pre_test_commands: {}", e)),
+        };
     }
 
     let extra_args = if args.extra_args.is_empty() { Vec::new() } else { args.extra_args.clone() };
@@ -460,15 +470,22 @@ impl ContextInfo {
 
 fn load_current_context() -> Option<ContextInfo> {
     let rxt = std::env::var("REZ_RXT_FILE").ok()?;
-    let content = fs::read_to_string(rxt).ok()?;
+    let content = fs::read_to_string(&rxt).ok()?;
     let json: JsonValue = serde_json::from_str(&content).ok()?;
     let mut resolved = HashMap::new();
     let list = json.get("resolved_packages")?.as_array()?;
     for item in list {
-        let vars = item.get("variables")?.as_object()?;
-        let name = vars.get("name")?.as_str()?;
-        let version = vars.get("version")?.as_str()?;
-        resolved.insert(name.to_string(), version.to_string());
+        let obj = item.as_object()?;
+        let (base, version) = if let (Some(b), Some(v)) = (obj.get("base").and_then(|x| x.as_str()), obj.get("version").and_then(|x| x.as_str())) {
+            (b.to_string(), v.to_string())
+        } else if let Some(vars) = obj.get("variables").and_then(|x| x.as_object()) {
+            let name = vars.get("name").and_then(|x| x.as_str())?;
+            let version = vars.get("version").and_then(|x| x.as_str())?;
+            (name.to_string(), version.to_string())
+        } else {
+            continue;
+        };
+        resolved.insert(base, version);
     }
     Some(ContextInfo { resolved })
 }

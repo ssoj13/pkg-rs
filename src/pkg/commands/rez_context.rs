@@ -1,7 +1,6 @@
-//! Rez context command (native subset with fallback to Python rez).
+//! Rez context command (native). .rxt path, --print-request, --print-resolve, --format, --which, etc.
 
 use crate::cli::RezStubArgs;
-use crate::commands::rez_passthrough::cmd_rez_passthrough;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::env;
@@ -10,16 +9,12 @@ use std::process::ExitCode;
 
 pub fn cmd_rez_context(args: &RezStubArgs) -> ExitCode {
     let parsed = match parse_context_args(&args.args) {
-        Ok(parsed) => parsed,
-        Err(_) => {
-            eprintln!("rez context: unsupported or invalid arguments");
+        Ok(p) => p,
+        Err(()) => {
+            eprintln!("rez context: unsupported option or argument (see pkg rez context --help)");
             return ExitCode::FAILURE;
         }
     };
-
-    if parsed.fallback {
-        return cmd_rez_passthrough("context", &args.args);
-    }
 
     run_context(parsed)
 }
@@ -36,7 +31,6 @@ struct ContextArgs {
     interpret: bool,
     which: Option<String>,
     no_env: bool,
-    fallback: bool,
 }
 
 fn parse_context_args(args: &[String]) -> Result<ContextArgs, ()> {
@@ -90,35 +84,14 @@ fn parse_context_args(args: &[String]) -> Result<ContextArgs, ()> {
                 parsed.no_env = true;
                 i += 1;
             }
-            // Known flags we don't implement yet -> fallback to python
-            "--tools"
-            | "--graph"
-            | "--dependency-graph"
-            | "--diff"
-            | "--fetch"
-            | "--so"
-            | "--source-order"
-            | "--pp"
-            | "--prune-package"
-            | "-g"
-            | "-d"
-            | "-t" => {
-                parsed.fallback = true;
-                i += 1;
-            }
-            "--" => {
-                parsed.fallback = true;
-                break;
-            }
-            _ if arg.starts_with('-') => {
-                parsed.fallback = true;
-                i += 1;
-            }
+            "--" => return Err(()),
+            // Unknown flag or second positional
+            _ if arg.starts_with('-') => return Err(()),
             _ => {
                 if parsed.rxt.is_none() {
                     parsed.rxt = Some(PathBuf::from(arg));
                 } else {
-                    parsed.fallback = true;
+                    return Err(());
                 }
                 i += 1;
             }
